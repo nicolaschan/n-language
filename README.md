@@ -16,3 +16,9 @@ Multiple arguments are treated like an array. The above function passes an array
 Sometimes you might want to have your argument contain reserved characters such as a comma or parentheses. To do this, you can use a backslash to escape them: `func(hello\,there)`
 
 You can also use a shortcut using square brackets to escape the text within them. This is especially useful if there are multiple characters you need to escape: `func([hello,there])`
+
+## Usage
+Clone this repository and run `run.js`.
+```sh
+$ node run.js
+```
