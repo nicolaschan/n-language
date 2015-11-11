@@ -18,7 +18,8 @@ Sometimes you might want to have your argument contain reserved characters such 
 You can also use a shortcut using square brackets to escape the text within them. This is especially useful if there are multiple characters you need to escape: `func([hello,there])`
 
 ## Usage
-Clone this repository and run `run.js`.
+Clone this repository and run `run.js` after installing dependencies.
 ```sh
+$ sudo npm install
 $ node run.js
 ```
