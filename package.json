@@ -1,0 +1,15 @@
+{
+  "name": "n-language",
+  "version": "1.0.0",
+  "description": "",
+  "main": "compiler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chalk": "^1.1.1",
+    "mathjs": "^2.4.1"
+  }
+}
