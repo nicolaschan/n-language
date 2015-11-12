@@ -1,5 +1,5 @@
 (function() {
-    var syntax = {
+    const syntax = {
         begin_arg: '(',
         end_arg: ')',
         arg_sep: ',',
@@ -150,17 +150,10 @@
                 var convertToObject = function(string) {
                     string = removeEscapeChars(string);
 
-                    if (string.length > 0) {
-                        return {
-                            type: 'text',
-                            value: string
-                        };
-                    } else {
-                        return {
-                            type: 'null',
-                            value: null
-                        };
-                    }
+                    return {
+                        type: 'text',
+                        value: string
+                    };
                 };
                 var object = convertToObject(command);
                 return object;

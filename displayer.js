@@ -4,6 +4,10 @@
 
 		var string = '';
 
+		if (!object) {
+			return chalk.gray.bold(object);
+		}
+
 		if (object.type) {
 			if (object.type === 'text') {
 				string += chalk.green(object.value);

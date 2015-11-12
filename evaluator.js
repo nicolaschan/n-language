@@ -7,14 +7,7 @@
                 object.arguments = object.arguments[0];
             }
 
-            if (functions[object.function]) {
-                return functions[object.function](object.arguments);
-            } else {
-                return {
-                    type: 'error',
-                    message: 'Function not found: ' + object.function
-                }
-            }
+            return functions.evaluate(object.function, object.arguments);
         };
 
 
