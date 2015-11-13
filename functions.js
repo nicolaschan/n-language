@@ -42,6 +42,68 @@
                 value: sum(arg).toString()
             };
         };
+        functions['call'] = function(arg) {
+            const syntax = {
+                begin: '{',
+                end: '}',
+                escape: '\\',
+                multiple_selector: '*'
+            };
+
+            var indexOfActualChar = function(character, string) {
+                string = string.split(syntax.escape + syntax.escape).join('  ');
+                for (var i = 0; i < string.length; i++) {
+                    if ((string.charAt(i) === character) && (string.charAt(i - 1) !== syntax.escape))
+                        return i;
+                }
+                return -1;
+            };
+
+            var compiler = require('./compiler');
+            var compile = compiler.compileSync((arg.type) ? arg.value : arg[0].value);
+
+            var replace = function(object) {
+                if (object.function) {
+                    object.arguments = replace(object.arguments);
+                } else if (object.type && object.type === 'text') {
+                    var removeEscapeChars = function(string) {
+                        string = string.split(syntax.escape + syntax.escape).join(syntax.escape);
+                        string = string.split(syntax.escape + syntax.begin).join(syntax.begin);
+                        string = string.split(syntax.escape + syntax.end).join(syntax.end);
+
+                        return string;
+                    };
+                    if (indexOfActualChar(syntax.begin, object.value) > -1) {
+                        var index_string = object.value.substring(indexOfActualChar(syntax.begin, object.value) + 1, indexOfActualChar(syntax.end, object.value));
+                        if (index_string === syntax.multiple_selector) {
+                            object = arg.splice(1);
+                        } else {
+                            var index = parseInt(index_string);
+                            object = arg[index];
+                        }
+                    }
+                    if (object.type && object.type === 'text')
+                        object.value = removeEscapeChars(object.value);
+                } else {
+                    for (var i in object) {
+                        object[i] = replace(object[i]);
+                    }
+                }
+                return object;
+            };
+
+            compile = replace(compile);
+
+            var evaluator = require('./evaluator');
+            return evaluator.evaluateCompiled(compile);
+        };
+        functions['each'] = function(arg) {
+            var result = [];
+            for (var i = 1; i < arg.length; i++) {
+                result.push(functions[arg[0].value](arg[i]));
+            }
+            return result;
+        };
         functions['concat'] = function(arg) {
             if (arg.type === 'error')
                 return arg;
@@ -68,12 +130,6 @@
                 value: concat(arg)
             }
         };
-        functions['math_config'] = function(arg) {
-            var config = {};
-            config[arg[0].value] = arg[1].value;
-            math.config(config);
-            return null;
-        };
         functions['echo'] = function(arg) {
             return arg;
         };
@@ -92,6 +148,7 @@
 
             return arg;
         };
+        functions['$'] = functions['evaluate'];
         functions['factorial'] = function(arg) {
             if (arg.type === 'error')
                 return arg;
@@ -113,6 +170,34 @@
             }
 
             return arg;
+        };
+        functions['function'] = function(arg) {
+            functions[arg[0].value] = function(arg2) {
+                var args = [];
+                args.push(arg[1]);
+                if (arg2.type) {
+                    args.push(arg2);
+                } else {
+                    for (var i in arg2) {
+                        args.push(arg2[i]);
+                    }
+                }
+                if (args.length > 1) {
+                    args = [args];
+                }
+                return functions['call'].apply(null, args);
+            };
+            return null;
+        };
+        functions['help'] = function(arg) {
+            var keys = [];
+            for (var k in functions) {
+                keys.push({
+                    type: 'text',
+                    value: k
+                });
+            }
+            return keys;
         };
         functions['length'] = function(arg) {
             if (arg.type) {
@@ -147,6 +232,12 @@
             }
 
             return arg;
+        };
+        functions['math_config'] = function(arg) {
+            var config = {};
+            config[arg[0].value] = arg[1].value;
+            math.config(config);
+            return null;
         };
         functions['multiply'] = function(arg) {
             if (arg.type === 'error')
@@ -183,6 +274,34 @@
         functions['pre'] = function(arg) {
             return previous_result;
         };
+        functions['recursion'] = function(arg) {
+            var count = 0;
+
+            var func_definition = arg[0];
+            var times = parseInt(arg[1].value);
+            var args = arg.splice(2);
+
+            if (args.length === 1)
+                args = args[0];
+
+            var iterate = function(args) {
+                if (count >= times)
+                    return args;
+
+                args = functions['call']([func_definition].concat(args));
+
+                count++;
+                return iterate(args);
+            };
+            return iterate(args);
+        };
+        functions['repeat'] = function(arg) {
+            var result = [];
+            for (var i = 0; i < parseInt(arg[1].value); i++) {
+                result.push(arg[0]);
+            }
+            return result;
+        };
         functions['select'] = function(arg) {
             var objects = [];
 
@@ -204,6 +323,58 @@
 
             return objects;
         };
+        functions['substitute'] = function(arg) {
+            const syntax = {
+                begin: '{',
+                end: '}',
+                escape: '\\'
+            };
+            var indexOfActualChar = function(character, string) {
+                string = string.split(syntax.escape + syntax.escape).join('  ');
+                for (var i = 0; i < string.length; i++) {
+                    if ((string.charAt(i) === character) && (string.charAt(i - 1) !== syntax.escape))
+                        return i;
+                }
+                return -1;
+            };
+            var countActualChar = function(character, string) {
+                string = string.split(syntax.escape + syntax.escape).join('');
+                var count = 0;
+                for (var i = 0; i < string.length; i++) {
+                    if ((string.charAt(i) === character) && (string.charAt(i - 1) !== syntax.escape))
+                        count++;
+                }
+                return count;
+            };
+
+            var command = '';
+            while (indexOfActualChar(syntax.begin, arg[0].value) > -1) {
+                var start = indexOfActualChar(syntax.begin, arg[0].value);
+                var end = indexOfActualChar(syntax.end, arg[0].value);
+                command += arg[0].value.substring(0, start);
+
+                var index = parseInt(arg[0].value.substring(start + 1, end));
+                command += arg[index].value;
+
+                arg[0].value = arg[0].value.substring(end + 1);
+            }
+            command += arg[0].value;
+
+            var removeEscapeChars = function(string) {
+                string = string.split(syntax.escape + syntax.escape).join(syntax.escape);
+                string = string.split(syntax.escape + syntax.begin).join(syntax.begin);
+                string = string.split(syntax.escape + syntax.end).join(syntax.end);
+
+                return string;
+            };
+
+            command = removeEscapeChars(command);
+
+            return {
+                type: 'text',
+                value: command
+            };
+        };
         functions['var'] = function(arg) {
             if (arg.type && arg.type === 'text') {
                 return vars[arg.value];
@@ -223,7 +394,14 @@
         var result;
 
         if (has_function(name)) {
-            result = functions[name](arg);
+            try {
+                result = functions[name](arg);
+            } catch (e) {
+                result = {
+                    type: 'error',
+                    message: e
+                };
+            }
         } else {
             result = {
                 type: 'error',

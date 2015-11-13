@@ -11,12 +11,21 @@
     };
 
     var countActualChar = function(character, string) {
+        string = string.split(syntax.escape + syntax.escape).join('');
         var count = 0;
         for (var i = 0; i < string.length; i++) {
             if ((string.charAt(i) === character) && (string.charAt(i - 1) !== syntax.escape))
                 count++;
         }
         return count;
+    };
+    var indexOfActualChar = function(character, string) {
+        string = string.split(syntax.escape + syntax.escape).join('  ');
+        for (var i = 0; i < string.length; i++) {
+            if ((string.charAt(i) === character) && (string.charAt(i - 1) !== syntax.escape))
+                return i;
+        }
+        return -1;
     };
 
     var preprocess = function(command) {
@@ -26,39 +35,37 @@
             return countActualChar(preprocess_settings.begin_string, string);
         };
         var indexOfFirstBeginning = function(string) {
-            for (var i = 0; i < string.length; i++) {
-                if ((string.charAt(i) === preprocess_settings.begin_string) && (string.charAt(i - 1) !== syntax.escape))
-                    return i;
-            }
-            return -1;
+            return indexOfActualChar(preprocess_settings.begin_string, string);
         };
         var countActualEndings = function(string) {
             return countActualChar(preprocess_settings.end_string, string);
         };
         var indexOfFirstEnding = function(string) {
-            for (var i = 0; i < string.length; i++) {
-                if ((string.charAt(i) === preprocess_settings.end_string) && (string.charAt(i - 1) !== syntax.escape))
-                    return i;
-            }
-            return -1;
+            return indexOfActualChar(preprocess_settings.end_string, string);
         };
 
         while (countActualBeginnings(command) > 0) {
-            var beginning = indexOfFirstBeginning(command);
-            var ending = indexOfFirstEnding(command);
+            var beginningIndex = indexOfFirstBeginning(command);
+            var endingIndex = indexOfFirstEnding(command);
 
             var escape = function(string) {
-                string = string.replace(new RegExp('\\' + syntax.begin_arg, 'g'), syntax.escape + syntax.begin_arg);
-                string = string.replace(new RegExp('\\' + syntax.end_arg, 'g'), syntax.escape + syntax.end_arg);
-                string = string.replace(new RegExp(syntax.arg_sep, 'g'), syntax.escape + syntax.arg_sep);
+                string = string.split(syntax.escape).join(syntax.escape + syntax.escape);
+                string = string.split(syntax.begin_arg).join(syntax.escape + syntax.begin_arg);
+                string = string.split(syntax.end_arg).join(syntax.escape + syntax.end_arg);
+                string = string.split(syntax.arg_sep).join(syntax.escape + syntax.arg_sep);
+
                 return string;
             };
 
-            command = command.substring(0, beginning) + escape(command.substring(beginning + 1, ending)) + command.substring(ending + 1);
+            var beginning = command.substring(0, beginningIndex);
+            var middle = command.substring(beginningIndex + 1, endingIndex);
+            var end = command.substring(endingIndex + 1);
+
+            command = beginning + escape(middle) + end;
         }
 
-        command = command.replace(syntax.escape + syntax.preprocess.begin_string, syntax.preprocess.begin_string);
-        command = command.replace(syntax.escape + syntax.preprocess.end_string, syntax.preprocess.end_string);
+        command = command.split(syntax.escape + syntax.preprocess.begin_string).join(syntax.preprocess.begin_string);
+        command = command.split(syntax.escape + syntax.preprocess.end_string).join(syntax.preprocess.end_string);
 
         while (countActualChar(syntax.begin_arg, command) > countActualChar(syntax.end_arg, command)) {
             command += syntax.end_arg;
@@ -118,17 +125,18 @@
             return getArgumentsByString(arguments_string);
         };
         var convert = function(command) {
-            var removeEscapeChars = function(string) {
-                string = string.replace(new RegExp('\\' + syntax.escape + '\\' + syntax.begin_arg, 'g'), syntax.begin_arg);
-                string = string.replace(new RegExp('\\' + syntax.escape + '\\' + syntax.end_arg, 'g'), syntax.end_arg);
-                string = string.replace(new RegExp('\\' + syntax.escape + syntax.arg_sep, 'g'), syntax.arg_sep);
-                return string;
-            };
-
             var checkIfFunction = function(string) {
                 if (getFunctionArgumentSeparatorIndex(string) > -1)
                     return true;
                 return false;
+            };
+            var removeEscapeChars = function(string) {
+                string = string.split(syntax.escape + syntax.escape).join(syntax.escape);
+                string = string.split(syntax.escape + syntax.begin_arg).join(syntax.begin_arg);
+                string = string.split(syntax.escape + syntax.end_arg).join(syntax.end_arg);
+                string = string.split(syntax.escape + syntax.arg_sep).join(syntax.arg_sep);
+
+                return string;
             };
 
             if (checkIfFunction(command)) {

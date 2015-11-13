@@ -21,6 +21,8 @@
 				string += display(object[i]) + chalk.gray(',');
 			}
 			string = string.substring(0, string.length - 6) + chalk.gray(']');
+			if (object.length === 0)
+				string = chalk.gray('[]');
 		}
 
 		return string;
