@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<link href="css/main.css" rel="stylesheet" type="text/css">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.0.0-alpha1/jquery.min.js"></script>
+	<script src="bundle.js"></script>
+	<title>n-language</title>
+	<script>
+		$(function() {
+			var history = [];
+			var current_index = -1;
+			var saved_value;
+
+			var display = function(result) {
+				var outputElement = $('<span></span>');
+
+				if (!result) {
+					var text = $('<span></span>').addClass('output-null');
+					text.text((result === undefined) ? 'undefined' : JSON.stringify(result));
+					outputElement.append(text);
+				} else {
+					if (result.type) {
+						if (result.type === 'text') {
+							var text = $('<span></span>').addClass('output-text');
+							text.text(result.value);
+							outputElement.append(text);
+						} else if (result.type === 'error') {
+							var error = $('<span></span>').addClass('output-error');
+							error.text(result.message);
+							outputElement.append(error);
+						} else {
+							var json = $('<span></span>').addClass('output-json');
+							json.text(JSON.stringify(result));
+							outputElement.append(json);
+						}
+					} else {
+						var beginArray = $('<span></span>').addClass('array-indicator').text('[');
+						outputElement.append(beginArray);
+						for (var i in result) {
+							outputElement.append(display(result[i]));
+							if (parseInt(i) !== (result.length - 1)) {
+								var comma = $('<span></span>').addClass('array-indicator').text(',');
+								outputElement.append(comma);
+							}
+						}
+						var endArray = $('<span></span>').addClass('array-indicator').text(']');
+						outputElement.append(endArray);
+					}
+				}
+				return outputElement;
+			};
+			var submit = function(string) {
+				var id = Date.now().toString();
+				history.unshift(string);
+				current_index = -1;
+
+				var createOutputElement = function(input) {
+					var outputContainer = $('<span></span>');
+					outputContainer.attr('id', id + 'container');
+
+					var createLabel = function(value) {
+						var label = $('<span></span>');
+						label.addClass('label');
+						label.html(value);
+						return label;
+					};
+					var createColumn = function() {
+						var column = $('<td></td>');
+						return column;
+					};
+
+					var outputElement = $('<div></div>');
+					outputElement.addClass('output-element');
+
+					var table = $('<table></table>');
+					table.addClass('output-table');
+
+					var inputRow = $('<tr></tr>');
+					inputRow.append(createColumn().append(createLabel('in')));
+					inputRow.append(createColumn().append(createLabel('&rsaquo;')));
+					inputRow.append(createColumn().append($('<span></span').addClass('input-text').text(input)));
+					var close = createLabel('&times;');
+					close.addClass('close');
+					close.click(function(event) {
+						$('#' + id + 'container').hide();
+					});
+					inputRow.append(createColumn().append(close));
+
+					table.append(inputRow);
+
+					var outputRow = $('<tr></tr>');
+					outputRow.append(createColumn().append(createLabel('out')));
+					outputRow.append(createColumn().append(createLabel('&rsaquo;')));
+					outputRow.append(createColumn().attr('id', id).addClass('output-space').append($('<span></span').addClass('loading').attr('id', id + 'temp').text('Calculating...')));
+
+					table.append(outputRow);
+
+					outputElement.append(table);
+
+					outputContainer.append(outputElement);
+					outputContainer.append($('<br></br>'));
+					return outputContainer;
+				};
+				$('#output').append(createOutputElement(string));
+
+				var worker = new Worker('./calculate_worker.js');
+				worker.postMessage(string);
+				worker.onmessage = function(e) {
+					$('#' + id + 'temp').remove();
+					$('#' + id).append(display(e.data));
+				};
+			};
+			$('#input').keypress(function(event) {
+				var keyCode = event.keyCode;
+				if (keyCode === 13) {
+					submit($('#input').val());
+					$('#input').val('');
+				}
+			});
+
+			$('#input').keydown(function(event) {
+				var keyCode = event.keyCode;
+				if (keyCode === 38 || keyCode === 40) {
+					if (current_index === -1) 
+						saved_value = $('#input').val();
+					if (keyCode === 38) {
+						if (current_index + 1 < history.length) {
+							current_index++;
+							$('#input').val(history[current_index]);
+						}
+					}
+					if (keyCode === 40) {
+						if (current_index > 0) {
+							current_index--;
+							$('#input').val(history[current_index]);
+						} else {
+							console.log(saved_value);
+							$('#input').val(saved_value);
+						}
+					}
+				}
+			});
+		});
+	</script>
+</head>
+<body>
+	<div id="output">
+	</div>
+	<input type="text" id="input" class="input" placeholder="" autofocus>
+</body>
+</html>

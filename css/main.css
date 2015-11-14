@@ -1,0 +1,59 @@
+input.input {
+	border: none;
+	height: 20px;
+	width: 100%;
+	outline: none;
+	font-family: 'Menlo', monospace;
+	font-size: 16px;
+	color: black;
+	padding: 2px;
+	transition: border-bottom 0.4s ease;
+}
+
+div.output-element {
+	width: 96.5vw;
+	border: 1px solid #cccccc;
+	font-family: 'Menlo', monospace;
+	padding: 5px;
+	display: inline-block;
+}
+
+table {
+	width: 100%;
+}
+td.output-space {
+	max-width: 80vw;
+	width: 100%;
+    word-wrap: break-word;
+}
+
+.input-text {
+	font-weight: 600;
+}
+.output-null {
+	color: #dddddd;
+}
+.output-error {
+	color: red;
+}
+.array-indicator {
+	color: #aaaaaa;
+}
+.close {
+	cursor: pointer;
+	transition: color 0.5s ease;
+}
+.close:hover {
+	color: red;
+}
+.loading {
+	color: #dddddd;
+}
+
+span.label {
+	color: #cccccc;
+}
+
+span.input-text {
+	color: black;
+}
