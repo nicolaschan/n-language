@@ -73,7 +73,7 @@
 
                         return string;
                     };
-                    if (indexOfActualChar(syntax.begin, object.value) > -1) {
+                    if (indexOfActualChar(syntax.begin, object.value) === 0) {
                         var index_string = object.value.substring(indexOfActualChar(syntax.begin, object.value) + 1, indexOfActualChar(syntax.end, object.value));
                         if (index_string === syntax.multiple_selector) {
                             object = arg.splice(1);
@@ -271,6 +271,12 @@
                 value: Date.now().toString()
             };
         };
+        functions['test'] = function(arg) {
+            return {
+                type: 'json',
+                value: 'hello'
+            }
+        };
         functions['pre'] = function(arg) {
             return previous_result;
         };
@@ -374,6 +380,15 @@
                 type: 'text',
                 value: command
             };
+        };
+        functions['time'] = function(arg) {
+            var start = Date.now();
+            var result = functions['evaluate'](arg);
+            var end = Date.now();
+            return [result, {
+                type: 'text',
+                value: (end - start).toString()
+            }];
         };
         functions['var'] = function(arg) {
             if (arg.type && arg.type === 'text') {
