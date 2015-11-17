@@ -79,7 +79,7 @@
                             object = arg.splice(1);
                         } else {
                             var index = parseInt(index_string);
-                            object = arg[index];
+                            object = JSON.parse(JSON.stringify(arg[index]));
                         }
                     }
                     if (object.type && object.type === 'text')
@@ -305,7 +305,7 @@
         functions['repeat'] = function(arg) {
             var result = [];
             for (var i = 0; i < parseInt(arg[1].value); i++) {
-                result.push(arg[0]);
+                result.push(JSON.parse(JSON.stringify(arg[0])));
             }
             return result;
         };
