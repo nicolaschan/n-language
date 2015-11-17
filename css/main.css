@@ -36,6 +36,10 @@ td.output-space {
 .output-error {
 	color: red;
 }
+.error-indicator {
+	color: red;
+	font-weight: 600;
+}
 .array-indicator {
 	color: #aaaaaa;
 }

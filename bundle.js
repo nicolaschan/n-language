@@ -602,13 +602,13 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
             } catch (e) {
                 result = {
                     type: 'error',
-                    message: e
+                    message: e.message
                 };
             }
         } else {
             result = {
                 type: 'error',
-                message: 'Function not found: ' + name
+                message: 'Undefined function ' + name
             };
         }
 

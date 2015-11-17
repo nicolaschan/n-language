@@ -7,6 +7,13 @@
 	<title>n-language</title>
 	<script>
 		$(function() {
+			var worker = new Worker('./calculate_worker.js');
+			worker.onmessage = function(e) {
+				var id = e.data.id;
+				$('#' + id + 'temp').remove();
+				$('#' + id).append(display(e.data.result));
+			};
+
 			var history = [];
 			var current_index = -1;
 			var saved_value;
@@ -25,6 +32,9 @@
 							text.text(result.value);
 							outputElement.append(text);
 						} else if (result.type === 'error') {
+							var error_indicator = $('<span></span>').addClass('error-indicator');
+							error_indicator.text('Error: ');
+							outputElement.append(error_indicator);
 							var error = $('<span></span>').addClass('output-error');
 							error.text(result.message);
 							outputElement.append(error);
@@ -103,12 +113,7 @@
 				};
 				$('#output').append(createOutputElement(string));
 
-				var worker = new Worker('./calculate_worker.js');
-				worker.postMessage(string);
-				worker.onmessage = function(e) {
-					$('#' + id + 'temp').remove();
-					$('#' + id).append(display(e.data));
-				};
+				worker.postMessage({id: id, input: string});
 			};
 			$('#input').keypress(function(event) {
 				var keyCode = event.keyCode;

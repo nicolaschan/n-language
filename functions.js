@@ -150,6 +150,7 @@
         };
         functions['$'] = functions['evaluate'];
         functions['factorial'] = function(arg) {
+            console.log(arg);
             if (arg.type === 'error')
                 return arg;
             var factorial = function(n) {
@@ -414,13 +415,13 @@
             } catch (e) {
                 result = {
                     type: 'error',
-                    message: e
+                    message: e.message
                 };
             }
         } else {
             result = {
                 type: 'error',
-                message: 'Function not found: ' + name
+                message: 'Undefined function ' + name
             };
         }
 
