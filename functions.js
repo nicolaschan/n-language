@@ -97,13 +97,6 @@
             var evaluator = require('./evaluator');
             return evaluator.evaluateCompiled(compile);
         };
-        functions['each'] = function(arg) {
-            var result = [];
-            for (var i = 1; i < arg.length; i++) {
-                result.push(functions[arg[0].value](arg[i]));
-            }
-            return result;
-        };
         functions['concat'] = function(arg) {
             if (arg.type === 'error')
                 return arg;
@@ -129,6 +122,13 @@
                 type: 'text',
                 value: concat(arg)
             }
+        };
+        functions['each'] = function(arg) {
+            var result = [];
+            for (var i = 1; i < arg.length; i++) {
+                result.push(functions[arg[0].value](arg[i]));
+            }
+            return result;
         };
         functions['echo'] = function(arg) {
             return arg;
@@ -199,6 +199,12 @@
                 });
             }
             return keys;
+        };
+        functions['image'] = function(arg) {
+            return {
+                type: 'image',
+                url: arg.value
+            }
         };
         functions['length'] = function(arg) {
             if (arg.type) {
@@ -272,12 +278,6 @@
                 value: Date.now().toString()
             };
         };
-        functions['test'] = function(arg) {
-            return {
-                type: 'json',
-                value: 'hello'
-            }
-        };
         functions['pre'] = function(arg) {
             return previous_result;
         };
@@ -329,6 +329,14 @@
             }
 
             return objects;
+        };
+        functions['style'] = function(arg) {
+            if (!arg[0].style)
+                arg[0].style = {};
+            for (var i = 1; i < arg.length; i += 2) {
+                arg[0].style[arg[i].value] = arg[i + 1].value;
+            }
+            return arg[0];
         };
         functions['substitute'] = function(arg) {
             const syntax = {

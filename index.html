@@ -30,7 +30,15 @@
 						if (result.type === 'text') {
 							var text = $('<span></span>').addClass('output-text');
 							text.text(result.value);
+							if (result.style)
+								text.css(result.style);
 							outputElement.append(text);
+						} else if (result.type === 'image') {
+							var image = $('<img></img>');
+							image.attr('src', result.url);
+							if (result.style)
+								image.css(result.style);
+							outputElement.append(image);
 						} else if (result.type === 'error') {
 							var error_indicator = $('<span></span>').addClass('error-indicator');
 							error_indicator.text('Error: ');
