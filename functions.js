@@ -63,6 +63,9 @@
             var compile = compiler.compileSync((arg.type) ? arg.value : arg[0].value);
 
             var replace = function(object) {
+                if (!object) {
+                    return object;
+                }
                 if (object.function) {
                     object.arguments = replace(object.arguments);
                 } else if (object.type && object.type === 'text') {
@@ -76,7 +79,7 @@
                     if (indexOfActualChar(syntax.begin, object.value) === 0) {
                         var index_string = object.value.substring(indexOfActualChar(syntax.begin, object.value) + 1, indexOfActualChar(syntax.end, object.value));
                         if (index_string === syntax.multiple_selector) {
-                            object = arg.splice(1);
+                            object = JSON.parse(JSON.stringify(arg.slice(1)));
                         } else {
                             var index = parseInt(index_string);
                             object = JSON.parse(JSON.stringify(arg[index]));
@@ -125,8 +128,8 @@
         };
         functions['each'] = function(arg) {
             var result = [];
-            for (var i = 1; i < arg.length; i++) {
-                result.push(functions[arg[0].value](arg[i]));
+            for (var i = 0; i < arg[1].length; i++) {
+                result.push(functions['call']([arg[0], arg[1][i]]));
             }
             return result;
         };
@@ -148,9 +151,9 @@
 
             return arg;
         };
+        functions['eval'] = functions['evaluate'];
         functions['$'] = functions['evaluate'];
         functions['factorial'] = function(arg) {
-            console.log(arg);
             if (arg.type === 'error')
                 return arg;
             var factorial = function(n) {
@@ -190,6 +193,7 @@
             };
             return null;
         };
+        functions['func'] = functions['function'];
         functions['help'] = function(arg) {
             var keys = [];
             for (var k in functions) {
@@ -205,6 +209,9 @@
                 type: 'image',
                 url: arg.value
             }
+        };
+        functions['last'] = function(arg) {
+            return arg[arg.length - 1];
         };
         functions['length'] = function(arg) {
             if (arg.type) {
@@ -278,6 +285,9 @@
                 value: Date.now().toString()
             };
         };
+        functions['parse'] = function(arg) {
+            return JSON.parse(arg.value);
+        };
         functions['pre'] = function(arg) {
             return previous_result;
         };
@@ -313,22 +323,36 @@
             var objects = [];
 
             for (var i = 1; i < arg.length; i++) {
-                if (arg[i].type && arg[i].type === 'text') {
-                    objects.push(arg[0][parseInt(arg[i].value)]);
-                } else {
-                    var subarray = [];
-                    for (var j = parseInt(arg[i][0].value); j <= parseInt(arg[i][1].value); j++) {
-                        subarray.push(arg[0][j]);
+                var object = [];
+                var parts = arg[i].value.split(',');
+                for (var j in parts) {
+                    if (parts[j].indexOf('-') > -1) {
+                        // range
+                        var indexes = parts[j].split('-');
+                        var starting_index = indexes[0];
+                        var ending_index = (indexes[1].length > 0) ? indexes[1] : arg[0].length - 1;
+
+                        for (var k = starting_index; k <= ending_index; k++) {
+                            object.push(arg[0][k]);
+                        }
+                    } else {
+                        object.push(arg[0][parts[j]]);
                     }
-                    objects.push(subarray);
                 }
+                objects.push(object);
             }
 
             if (objects.length === 1) {
+                if (objects[0].length === 1)
+                    return objects[0][0];
                 return objects[0];
             }
 
             return objects;
+        };
+        functions['stringify'] = function(arg) {
+            arg.value = JSON.stringify(arg);
+            return arg;
         };
         functions['style'] = function(arg) {
             if (!arg[0].style)
@@ -399,6 +423,17 @@
                 value: (end - start).toString()
             }];
         };
+        functions['unicode'] = function(arg) {
+            if (arg.type && arg.type === 'text') {
+                arg.value = String.fromCharCode(arg.value);
+            } else {
+                for (var i in arg) {
+                    arg[i] = functions['unicode'](arg[i]);
+                }
+            }
+            return arg;
+        };
+        functions['u'] = functions['unicode'];
         functions['var'] = function(arg) {
             if (arg.type && arg.type === 'text') {
                 return vars[arg.value];
