@@ -60,8 +60,14 @@
             var beginning = command.substring(0, beginningIndex);
             var middle = command.substring(beginningIndex + 1, endingIndex);
             var end = command.substring(endingIndex + 1);
-
-            command = beginning + escape(middle) + end;
+            try
+            {
+                command = beginning + escape(middle) + end;
+            }
+            catch(err)
+            {
+                throw("Syntax error");
+            }
         }
 
         command = command.split(syntax.escape + syntax.preprocess.begin_string).join(syntax.preprocess.begin_string);

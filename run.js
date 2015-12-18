@@ -14,10 +14,15 @@
 			chunk = chunk.substring(0, chunk.length - 1);
 
 			var start = Date.now();
-
-			var compile = compiler.compileSync(chunk);
-			var raw = evaluator.evaluateCompiled(compile);
-
+			try
+			{
+				var compile = compiler.compileSync(chunk);
+				var raw = evaluator.evaluateCompiled(compile);
+			}
+			catch(err)
+			{
+				console.log(err);
+			}
 			//process.stdout.write('\033[90m# compile > \033[37m' + JSON.stringify(compile) + '\n');
 			//process.stdout.write('\033[90m# raw > \033[37m' + JSON.stringify(raw) + '\n');
 			process.stdout.write('\033[90mout > \033[0m' + displayer.display(raw) + '\n');
