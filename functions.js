@@ -21,11 +21,9 @@
                 return arg;
             var sum = function(nums) {
                 var result = math.bignumber(0);
-
                 if (nums.type && nums.type === 'text') {
                     return nums;
                 }
-
                 for (var i in nums) {
                     if (nums[i].type && nums[i].type === 'text') {
                         result = result.plus(math.bignumber(nums[i].value));
@@ -33,14 +31,43 @@
                         result = result.plus(sum(nums[i]));
                     }
                 }
-
                 return result;
             };
-
             return {
                 type: 'text',
                 value: sum(arg).toString()
             };
+        };
+        functions['ackermann'] = function(arg)
+        {
+            if (arg.type === 'error')
+                return arg;
+            var ackermann_function = function(m,n) //returns big number
+            {
+                const zero = math.bignumber(0);
+                const one = math.bignumber(1);
+                if(m.equals(zero))
+                    return n.plus(1);
+                else if(n.equals(zero) && m.greaterThan(zero))
+                    return ackermann_function(m.minus(1), one);
+                else if(n.greaterThan(zero) && m.greaterThan(zero))
+                    return ackermann_function(m.minus(1),ackermann_function(m,n.minus(1)));
+                else 
+                    throw "IllegalArg";
+            };
+            var ackermann_function_wrapper = function(arg)
+            {
+                if(arg.length != 2)
+                    throw "IllegalArg";
+                var m = math.bignumber(arg[0].value);
+                var n = math.bignumber(arg[1].value);
+                return ackermann_function(m,n).toString();
+                
+            }
+            return {
+                type: 'text',
+                value: ackermann_function_wrapper(arg)
+            }
         };
         functions['call'] = function(arg) {
             const syntax = {
