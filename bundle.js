@@ -193,6 +193,11 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
         precision: 64
     });
 
+    var clone = function(obj) {
+        return JSON.parse(JSON.stringify(obj));
+    };
+
+
     var scope = {};
     var vars = {};
 
@@ -314,6 +319,39 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
                 value: concat(arg)
             }
         };
+        functions['derivative'] = function(arg) {
+            var command = arg[0].value;
+            var number = math.bignumber(arg[1].value);
+            var variable_name = arg[2].value;
+            var delta = (arg[3]) ? math.bignumber(arg[3].value) : math.bignumber('1e-16');
+
+            var call_function = function() {
+                return math.bignumber(functions['evaluate']({
+                    type: 'text',
+                    'value': command
+                }).value);
+            };
+            var set_variable = function(value) {
+                functions['var']([{
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: value
+                }]);
+            };
+
+            set_variable(number.toString());
+            var first_value = call_function();
+            set_variable(number.minus(delta).toString());
+            var second_value = call_function();
+
+            return {
+                type: 'text',
+                'value': first_value.minus(second_value).dividedBy(delta).toString()
+            };
+        };
+        functions['d'] = functions['derivative'];
         functions['each'] = function(arg) {
             var result = [];
             for (var i = 0; i < arg[1].length; i++) {
@@ -538,6 +576,80 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
 
             return objects;
         };
+        functions['solve'] = function(arg) {
+            var command1 = arg[0].value;
+            var command2 = arg[1].value;
+            var variable_name = arg[2].value;
+            var starting_value = (arg[3]) ? math.bignumber(arg[3].value) : math.bignumber(0);
+            var iterations = (arg[4]) ? parseFloat(arg[4].value) : 10;
+            var derivative_delta = (arg[5]) ? math.bignumber(arg[5].value) : math.bignumber('1e-16');
+
+            var set_variable = function(value) {
+                functions['var']([{
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: value
+                }]);
+            };
+            var call_function = function(x) {
+                set_variable(x.toString());
+                var first = math.bignumber(functions['evaluate']({
+                    type: 'text',
+                    value: command1
+                }).value);
+                set_variable(x.toString());
+                var second = math.bignumber(functions['evaluate']({
+                    type: 'text',
+                    value: command2
+                }).value)
+                return first.minus(second);
+            };
+            var getSlope = function(x) {
+                return math.bignumber(functions['derivative']([{
+                    type: 'text',
+                    value: command1
+                }, {
+                    type: 'text',
+                    value: x
+                }, {
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: derivative_delta.toString()
+                }]).value).minus(functions['derivative']([{
+                    type: 'text',
+                    value: command2
+                }, {
+                    type: 'text',
+                    value: x
+                }, {
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: derivative_delta.toString()
+                }]).value);
+            };
+            var nextX = function(x) {
+                var y = call_function(x);
+                var m = getSlope(x);
+
+                // intercept is x - (y / m)
+                return math.bignumber(x).minus(y.dividedBy(m));
+            };
+
+            var current = starting_value;
+            for (var i = 0; i < iterations; i++) {
+                current = nextX(current);
+            }
+            return {
+                type: 'text',
+                value: current.toString()
+            }
+        };
         functions['stringify'] = function(arg) {
             arg.value = JSON.stringify(arg);
             return arg;
@@ -602,6 +714,19 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
                 value: command
             };
         };
+        functions['pow'] = function(arg) {
+            arg[0].value = math.bignumber(arg[0].value).pow(arg[1].value).toString();
+            return arg[0];
+        };
+        functions['round'] = function(arg) {
+            if (arg[0]) {
+                arg[0].value = math.round(arg[0].value, arg[1].value);
+                return arg[0];
+            } else {
+                arg.value = math.round(arg.value, 0);
+                return arg;
+            }
+        };
         functions['time'] = function(arg) {
             var start = Date.now();
             var result = functions['evaluate'](arg);
@@ -624,7 +749,7 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
         functions['u'] = functions['unicode'];
         functions['var'] = function(arg) {
             if (arg.type && arg.type === 'text') {
-                return vars[arg.value];
+                return clone(vars[arg.value]);
             }
             vars[arg[0].value] = arg[1];
             return null;
@@ -10509,13 +10634,17 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @private
    */
-  ArrayNode.prototype._compile = function (defs) {
+  ArrayNode.prototype._compile = function (defs, args) {
     var asMatrix = (defs.math.config().matrix !== 'array');
 
     var nodes = this.nodes.map(function (node) {
-      return node._compile(defs);
+      return node._compile(defs, args);
     });
 
     return (asMatrix ? 'math.matrix([' : '[') +
@@ -10643,10 +10772,14 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @private
    */
-  AssignmentNode.prototype._compile = function (defs) {
-    return 'scope["' + this.name + '"] = ' + this.expr._compile(defs) + '';
+  AssignmentNode.prototype._compile = function (defs, args) {
+    return 'scope["' + this.name + '"] = ' + this.expr._compile(defs, args) + '';
   };
 
 
@@ -10773,13 +10906,17 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  BlockNode.prototype._compile = function (defs) {
+  BlockNode.prototype._compile = function (defs, args) {
     defs.ResultSet = ResultSet;
     var blocks = this.blocks.map(function (param) {
-      var js = param.node._compile(defs);
+      var js = param.node._compile(defs, args);
       if (param.visible) {
         return 'results.push(' + js + ');';
       }
@@ -10912,10 +11049,14 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  ConditionalNode.prototype._compile = function (defs) {
+  ConditionalNode.prototype._compile = function (defs, args) {
     /**
      * Test whether a condition is met
      * @param {*} condition
@@ -10950,9 +11091,9 @@ function factory (type, config, load, typed) {
     };
 
     return (
-    'testCondition(' + this.condition._compile(defs) + ') ? ' +
-    '( ' + this.trueExpr._compile(defs) + ') : ' +
-    '( ' + this.falseExpr._compile(defs) + ')'
+      'testCondition(' + this.condition._compile(defs, args) + ') ? ' +
+      '( ' + this.trueExpr._compile(defs, args) + ') : ' +
+      '( ' + this.falseExpr._compile(defs, args) + ')'
     );
   };
 
@@ -11131,10 +11272,14 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  ConstantNode.prototype._compile = function (defs) {
+  ConstantNode.prototype._compile = function (defs, args) {
     switch (this.valueType) {
       case 'number':
         // TODO: replace this with using config.number
@@ -11264,7 +11409,7 @@ function factory (type, config, load, typed) {
    * Function assignment
    *
    * @param {string} name           Function name
-   * @param {string[]} params         Function parameter names
+   * @param {string[]} params       Function parameter names
    * @param {Node} expr             The function expression
    */
   function FunctionAssignmentNode(name, params, expr) {
@@ -11294,14 +11439,22 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  FunctionAssignmentNode.prototype._compile = function (defs) {
-    // add the function arguments to defs (used by SymbolNode and UpdateNode)
+  FunctionAssignmentNode.prototype._compile = function (defs, args) {
+    // we extend the original args and add the args to the child object
+    var childArgs = Object.create(args);
     this.params.forEach(function (variable) {
-      defs.args[variable] = true;
+      childArgs[variable] = true;
     });
+
+    // compile the function expression with the child args
+    var jsExpr = this.expr._compile(defs, childArgs);
 
     return 'scope["' + this.name + '"] = ' +
         '  (function () {' +
@@ -11311,7 +11464,7 @@ function factory (type, config, load, typed) {
           // TODO: test arguments error
         '        throw new SyntaxError("Wrong number of arguments in function ' + this.name + ' (" + arguments.length + " provided, ' + this.params.length + ' expected)");' +
         '      }' +
-        '      return ' + this.expr._compile(defs) + '' +
+        '      return ' + jsExpr + '' +
         '    };' +
         '    fn.syntax = "' + this.name + '(' + this.params.join(', ') + ')";' +
         '    return fn;' +
@@ -11440,16 +11593,20 @@ function factory (type, config, load, typed, math) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  FunctionNode.prototype._compile = function (defs) {
+  FunctionNode.prototype._compile = function (defs, args) {
     var fn = defs.math[this.name];
     var isRaw = (typeof fn === 'function') && (fn.rawArgs == true);
 
     // compile the parameters
-    var args = this.args.map(function (arg) {
-      return arg._compile(defs);
+    var jsArgs = this.args.map(function (arg) {
+      return arg._compile(defs, args);
     });
 
     if (isRaw) {
@@ -11464,13 +11621,13 @@ function factory (type, config, load, typed, math) {
       defs[paramsName] = this.args;
 
       return '("' + this.name + '" in scope ? ' +
-          'scope["' + this.name + '"](' + args.join(', ') + ') : ' +
+          'scope["' + this.name + '"](' + jsArgs.join(', ') + ') : ' +
           'math["' + this.name + '"]' + '(' + paramsName + ', math, scope))';
     }
     else {
       // "regular" evaluation
       var symbol = new SymbolNode(this.name);
-      return symbol._compile(defs) + '(' + args.join(', ') + ')';
+      return symbol._compile(defs, args) + '(' + jsArgs.join(', ') + ')';
     }
   };
 
@@ -11760,11 +11917,15 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  IndexNode.prototype._compile = function (defs) {
-    return this.compileSubset(defs);
+  IndexNode.prototype._compile = function (defs, args) {
+    return this.compileSubset(defs, args);
   };
 
   /**
@@ -11772,6 +11933,10 @@ function factory (type, config, load, typed) {
    * @param {Object} defs           Object which can be used to define functions
    *                                or constants globally available for the
    *                                compiled expression
+   * @param {Object} args           Object with local function arguments, the key is
+   *                                the name of the argument, and the value is `true`.
+   *                                The object may not be mutated, but must be
+   *                                extended instead.
    * @param {string} [replacement]  If provided, the function returns
    *                                  "math.subset(obj, math.index(...), replacement)"
    *                                Else, the function returns
@@ -11779,7 +11944,7 @@ function factory (type, config, load, typed) {
    * @return {string} js
    * @returns {string}
    */
-  IndexNode.prototype.compileSubset = function (defs, replacement) {
+  IndexNode.prototype.compileSubset = function (defs, args, replacement) {
     // check whether any of the ranges expressions uses the context symbol 'end'
     function test(node) {
       return (node && node.isSymbolNode) && (node.name == 'end');
@@ -11801,6 +11966,8 @@ function factory (type, config, load, typed) {
       );
     };
 
+    var childArgs = Object.create(args);
+
     // TODO: implement support for bignumber (currently bignumbers are silently
     //       reduced to numbers when changing the value to zero-based)
 
@@ -11811,40 +11978,40 @@ function factory (type, config, load, typed) {
       var useEnd = rangesUseEnd[i];
       if (range && range.isRangeNode) {
         if (useEnd) {
-          defs.args.end = true;
+          childArgs.end = true;
 
           // resolve end and create range
           return '(function () {' +
               '  var end = size[' + i + '];' +
               '  return range(' +
-              '    ' + range.start._compile(defs) + ', ' +
-              '    ' + range.end._compile(defs) + ', ' +
-              '    ' + (range.step ? range.step._compile(defs) : '1') +
+              '    ' + range.start._compile(defs, childArgs) + ', ' +
+              '    ' + range.end._compile(defs, childArgs) + ', ' +
+              '    ' + (range.step ? range.step._compile(defs, childArgs) : '1') +
               '  );' +
               '})()';
         }
         else {
           // create range
           return 'range(' +
-              range.start._compile(defs) + ', ' +
-              range.end._compile(defs) + ', ' +
-              (range.step ? range.step._compile(defs) : '1') +
+              range.start._compile(defs, childArgs) + ', ' +
+              range.end._compile(defs, childArgs) + ', ' +
+              (range.step ? range.step._compile(defs, childArgs) : '1') +
               ')';
         }
       }
       else {
         if (useEnd) {
-          defs.args.end = true;
+          childArgs.end = true;
 
           // resolve the parameter 'end'
           return '(function () {' +
               '  var end = size[' + i + '];' +
-              '  return ' + range._compile(defs) + ';' +
+              '  return ' + range._compile(defs, childArgs) + ';' +
               '})()'
         }
         else {
           // just evaluate the expression
-          return range._compile(defs);
+          return range._compile(defs, childArgs);
         }
       }
     });
@@ -11852,7 +12019,7 @@ function factory (type, config, load, typed) {
     // if some parameters use the 'end' parameter, we need to calculate the size
     if (someUseEnd) {
       return '(function () {' +
-          '  var obj = ' + this.object._compile(defs) + ';' +
+          '  var obj = ' + this.object._compile(defs, childArgs) + ';' +
           '  var size = math.size(obj).valueOf();' +
           '  return math.subset(' +
           '    obj, ' +
@@ -11863,7 +12030,7 @@ function factory (type, config, load, typed) {
     }
     else {
       return 'math.subset(' +
-          this.object._compile(defs) + ',' +
+          this.object._compile(defs, childArgs) + ',' +
           'math.index(' + ranges.join(', ') + ')' +
           (replacement ? (', ' + replacement) : '') +
           ')';
@@ -12022,7 +12189,10 @@ function factory (type, config, load, typed, math) {
       _validateScope: _validateScope
     };
 
-    var code = this._compile(defs);
+    // will be used to put local function arguments
+    var args = {};
+
+    var code = this._compile(defs, args);
 
     var defsCode = Object.keys(defs).map(function (name) {
       return '    var ' + name + ' = defs["' + name + '"];';
@@ -12047,10 +12217,14 @@ function factory (type, config, load, typed, math) {
    * @param {Object} defs     Object which can be used to define functions
    *                          and constants globally available inside the closure
    *                          of the compiled expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  Node.prototype._compile = function (defs) {
+  Node.prototype._compile = function (defs, args) {
     // must be implemented by each of the Node implementations
     throw new Error('Cannot compile a Node interface');
   };
@@ -12380,18 +12554,23 @@ function factory (type, config, load, typed, math) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  OperatorNode.prototype._compile = function (defs) {
-    if (!(this.fn in defs.math)) {
+  OperatorNode.prototype._compile = function (defs, args) {
+    if (!defs.math[this.fn]) {
       throw new Error('Function ' + this.fn + ' missing in provided namespace "math"');
     }
 
-    var args = this.args.map(function (arg) {
-      return arg._compile(defs);
+    var jsArgs = this.args.map(function (arg) {
+      return arg._compile(defs, args);
     });
-    return 'math.' + this.fn + '(' + args.join(', ') + ')';
+
+    return 'math.' + this.fn + '(' + jsArgs.join(', ') + ')';
   };
 
   /**
@@ -12775,11 +12954,15 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  ParenthesisNode.prototype._compile = function (defs) {
-    return this.content._compile(defs);
+  ParenthesisNode.prototype._compile = function (defs, args) {
+    return this.content._compile(defs, args);
   };
 
   /**
@@ -12789,7 +12972,7 @@ function factory (type, config, load, typed) {
    **/
   ParenthesisNode.prototype.getContent = function () {
     return this.content.getContent();
-  }
+  };
 
   /**
    * Execute a callback for each of the child nodes of this node
@@ -12864,7 +13047,7 @@ function factory (type, config, load, typed) {
    * @extends {Node}
    * create a range
    * @param {Node} start  included lower-bound
-   * @param {Node} end    included lower-bound
+   * @param {Node} end    included upper-bound
    * @param {Node} [step] optional step
    */
   function RangeNode(start, end, step) {
@@ -12894,14 +13077,18 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  RangeNode.prototype._compile = function (defs) {
+  RangeNode.prototype._compile = function (defs, args) {
     return 'math.range(' +
-        this.start._compile(defs) + ', ' +
-        this.end._compile(defs) +
-        (this.step ? (', ' + this.step._compile(defs)) : '') +
+        this.start._compile(defs, args) + ', ' +
+        this.end._compile(defs, args) +
+        (this.step ? (', ' + this.step._compile(defs, args)) : '') +
         ')';
   };
 
@@ -13079,15 +13266,19 @@ function factory (type, config, load, typed, math) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  SymbolNode.prototype._compile = function (defs) {
+  SymbolNode.prototype._compile = function (defs, args) {
     // add a function to the definitions
     defs['undef'] = undef;
     defs['Unit'] = Unit;
 
-    if (this.name in defs.args) {
+    if (args[this.name]) {
       // this is a FunctionAssignment argument
       // (like an x when inside the expression of a function assignment `f(x) = ...`)
       return this.name;
@@ -13219,15 +13410,19 @@ function factory (type, config, load, typed) {
    * @param {Object} defs     Object which can be used to define functions
    *                          or constants globally available for the compiled
    *                          expression
+   * @param {Object} args     Object with local function arguments, the key is
+   *                          the name of the argument, and the value is `true`.
+   *                          The object may not be mutated, but must be
+   *                          extended instead.
    * @return {string} js
    * @private
    */
-  UpdateNode.prototype._compile = function (defs) {
-    var lhs = (this.index.objectName() in defs.args)
+  UpdateNode.prototype._compile = function (defs, args) {
+    var lhs = args[this.index.objectName()]
         ? this.name + ' = ' // this is a FunctionAssignment argument
         : 'scope["' + this.index.objectName() + '\"]';
 
-    var rhs = this.index.compileSubset(defs, this.expr._compile(defs));
+    var rhs = this.index.compileSubset(defs, args, this.expr._compile(defs, args));
 
     return lhs + ' = ' + rhs;
   };
@@ -18545,7 +18740,7 @@ function factory (type, config, load, typed) {
       // This gives correct, but unexpected, results for units with an offset.
       // For example, abs(-283.15 degC) = -263.15 degC !!!
       var ret = x.clone();
-      ret.value = Math.abs(ret.value);
+      ret.value = abs(ret.value);
       return ret;
     }
   });
@@ -18726,7 +18921,7 @@ function factory(type, config, load, typed) {
    * @return {number | BigNumber | Fraction | Complex | Unit}                      Sum of `x` and `y`
    * @private
    */
-  return typed('add', {
+  var add = typed('add', {
 
     'number, number': function (x, y) {
       return x + y;
@@ -18753,11 +18948,13 @@ function factory(type, config, load, typed) {
       if (!x.equalBase(y)) throw new Error('Units do not match');
 
       var res = x.clone();
-      res.value += y.value;
+      res.value = add(res.value, y.value);
       res.fixPrefix = false;
       return res;
     }
   });
+
+  return add;
 }
 
 exports.factory = factory;
@@ -18768,6 +18965,8 @@ exports.factory = factory;
 var deepMap = require('../../utils/collection/deepMap');
 
 function factory (type, config, load, typed) {
+  var unaryMinus = load(require('./unaryMinus'));
+  var isNegative = load(require('../utils/isNegative'));
   var matrix = load(require('../../type/matrix/function/matrix'));
   var complexMultiply = typed.find(load(require('./multiplyScalar')), ['Complex,Complex']);
   var complexExp      = typed.find(load(require('./exp')), ['Complex']);
@@ -18935,15 +19134,27 @@ function factory (type, config, load, typed) {
    * @private
    */
   function _cbrtUnit(x) {
-    var negate = x.value < 0;
+    var negate = isNegative(x.value);
     if (negate) {
-      x.value = -x.value;
+      x.value = unaryMinus(x.value);
     }
 
-    var result = x.pow(1/3);
+    // TODO: create a helper function for this
+    var third;
+    if (x.value && x.value.isBigNumber) {
+      third = new type.BigNumber(1).div(3);
+    }
+    else if (x.value && x.value.isFraction) {
+      third = new type.Fraction(1, 3);
+    }
+    else {
+      third = 1/3;
+    }
+
+    var result = x.pow(third);
 
     if (negate) {
-      result.value = -result.value;
+      result.value = unaryMinus(result.value);
     }
 
     return result;
@@ -18957,7 +19168,7 @@ function factory (type, config, load, typed) {
 exports.name = 'cbrt';
 exports.factory = factory;
 
-},{"../../type/matrix/function/matrix":430,"../../utils/collection/deepMap":484,"./exp":261,"./multiplyScalar":272}],254:[function(require,module,exports){
+},{"../../type/matrix/function/matrix":430,"../../utils/collection/deepMap":484,"../utils/isNegative":395,"./exp":261,"./multiplyScalar":272,"./unaryMinus":281}],254:[function(require,module,exports){
 'use strict';
 
 var deepMap = require('../../utils/collection/deepMap');
@@ -19185,6 +19396,8 @@ exports.factory = factory;
 'use strict';
 
 function factory(type, config, load, typed) {
+  var multiplyScalar = load(require('./multiplyScalar'));
+
   /**
    * Divide two scalar values, `x / y`.
    * This function is meant for internal use: it is used by the public functions
@@ -19213,15 +19426,17 @@ function factory(type, config, load, typed) {
       return x.div(y);
     },
 
-    'Unit, number': function (x, y) {
+    'Unit, number | Fraction | BigNumber': function (x, y) {
       var res = x.clone();
-      res.value = ((res.value === null) ? res._normalize(1) : res.value) / y;
+      // TODO: move the divide function to Unit.js, it uses internals of Unit
+      res.value = divideScalar(((res.value === null) ? res._normalize(1) : res.value), y);
       return res;
     },
 
-    'number, Unit': function (x, y) {
+    'number | Fraction | BigNumber, Unit': function (x, y) {
       var res = y.pow(-1);
-      res.value = ((res.value === null) ? res._normalize(1) : res.value) * x;
+      // TODO: move the divide function to Unit.js, it uses internals of Unit
+      res.value = multiplyScalar(((res.value === null) ? res._normalize(1) : res.value), x);
       return res;
     },
 
@@ -19260,7 +19475,7 @@ function factory(type, config, load, typed) {
 
 exports.factory = factory;
 
-},{}],258:[function(require,module,exports){
+},{"./multiplyScalar":272}],258:[function(require,module,exports){
 'use strict';
 
 function factory (type, config, load, typed) {
@@ -21818,15 +22033,15 @@ function factory(type, config, load, typed) {
       return x.mul(y);
     },
 
-    'number, Unit': function (x, y) {
+    'number | Fraction | BigNumber, Unit': function (x, y) {
       var res = y.clone();
-      res.value = (res.value === null) ? res._normalize(x) : (res.value * x);
+      res.value = (res.value === null) ? res._normalize(x) : multiplyScalar(res.value, x);
       return res;
     },
 
-    'Unit, number': function (x, y) {
+    'Unit, number | Fraction | BigNumber': function (x, y) {
       var res = x.clone();
-      res.value = (res.value === null) ? res._normalize(y) : (res.value * y);
+      res.value = (res.value === null) ? res._normalize(y) : multiplyScalar(res.value, y);
       return res;
     },
 
@@ -22769,7 +22984,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit': function(x) {
-      return number.sign(x.value);
+      return sign(x.value);
     }
   });
 
@@ -22984,6 +23199,8 @@ function factory (type, config, load, typed) {
   var algorithm13 = load(require('../../type/matrix/utils/algorithm13'));
   var algorithm14 = load(require('../../type/matrix/utils/algorithm14'));
 
+  // TODO: split function subtract in two: subtract and subtractScalar
+
   /**
    * Subtract two values, `x - y`.
    * For matrices, the function is evaluated element wise.
@@ -23052,7 +23269,7 @@ function factory (type, config, load, typed) {
       }
 
       var res = x.clone();
-      res.value -= y.value;
+      res.value = subtract(res.value, y.value);
       res.fixPrefix = false;
 
       return res;
@@ -23215,7 +23432,7 @@ function factory (type, config, load, typed) {
 
     'Unit': function (x) {
       var res = x.clone();
-      res.value = -x.value;
+      res.value = unaryMinus(x.value);
       return res;
     },
 
@@ -25406,6 +25623,7 @@ function factory (type, config, load, typed) {
   var matrix = load(require('../../type/matrix/function/matrix'));
   var zeros = load(require('../matrix/zeros'));
   var not = load(require('./not'));
+  var isZero = load(require('../utils/isZero'));
 
   var algorithm02 = load(require('../../type/matrix/utils/algorithm02'));
   var algorithm06 = load(require('../../type/matrix/utils/algorithm06'));
@@ -25456,7 +25674,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit, Unit': function (x, y) {
-      return (x.value !== 0 && x.value !== null) && (y.value !== 0 && y.value !== null);
+      return and(x.value, y.value);
     },
     
     'Matrix, Matrix': function (x, y) {
@@ -25567,7 +25785,7 @@ function factory (type, config, load, typed) {
 exports.name = 'and';
 exports.factory = factory;
 
-},{"../../type/matrix/function/matrix":430,"../../type/matrix/utils/algorithm02":434,"../../type/matrix/utils/algorithm06":438,"../../type/matrix/utils/algorithm11":443,"../../type/matrix/utils/algorithm13":445,"../../type/matrix/utils/algorithm14":446,"../../utils/latex":491,"../matrix/zeros":328,"./not":308}],307:[function(require,module,exports){
+},{"../../type/matrix/function/matrix":430,"../../type/matrix/utils/algorithm02":434,"../../type/matrix/utils/algorithm06":438,"../../type/matrix/utils/algorithm11":443,"../../type/matrix/utils/algorithm13":445,"../../type/matrix/utils/algorithm14":446,"../../utils/latex":491,"../matrix/zeros":328,"../utils/isZero":398,"./not":308}],307:[function(require,module,exports){
 module.exports = [
   require('./and'),
   require('./not'),
@@ -25622,7 +25840,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit': function (x) {
-      return x.value === null || x.value == 0;
+      return not(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -25695,7 +25913,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit, Unit': function (x, y) {
-      return (x.value !== 0 && x.value !== null) || (y.value !== 0 && y.value !== null);
+      return or(x.value, y.value);
     },
 
     'Matrix, Matrix': function (x, y) {
@@ -25853,7 +26071,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit, Unit': function (x, y) {
-      return !!((x.value !== 0 && x.value !== null) ^ (y.value !== 0 && y.value !== null));
+      return xor(x.value, y.value);
     },
 
     'Matrix, Matrix': function (x, y) {
@@ -29394,7 +29612,7 @@ function factory (type, config, load, typed) {
       if (!x.equalBase(y)) {
         throw new Error('Cannot compare units with different base');
       }
-      return (x.value === y.value || nearlyEqual(x.value, y.value, config.epsilon)) ? 0 : (x.value > y.value ? 1 : -1);
+      return compare(x.value, y.value);
     },
 
     'string, string': function (x, y) {
@@ -29793,7 +30011,7 @@ function factory (type, config, load, typed) {
       if (!x.equalBase(y)) {
         throw new Error('Cannot compare units with different base');
       }
-      return x.value === y.value || nearlyEqual(x.value, y.value, config.epsilon);
+      return equalScalar(x.value, y.value);
     },
 
     'string, string': function (x, y) {
@@ -29891,7 +30109,7 @@ function factory (type, config, load, typed) {
       if (!x.equalBase(y)) {
         throw new Error('Cannot compare units with different base');
       }
-      return x.value > y.value && !nearlyEqual(x.value, y.value, config.epsilon);
+      return larger(x.value, y.value);
     },
 
     'string, string': function (x, y) {
@@ -30065,7 +30283,7 @@ function factory (type, config, load, typed) {
       if (!x.equalBase(y)) {
         throw new Error('Cannot compare units with different base');
       }
-      return x.value >= y.value || nearlyEqual(x.value, y.value, config.epsilon);
+      return largerEq(x.value, y.value);
     },
 
     'string, string': function (x, y) {
@@ -30243,7 +30461,7 @@ function factory (type, config, load, typed) {
       if (!x.equalBase(y)) {
         throw new Error('Cannot compare units with different base');
       }
-      return x.value < y.value && !nearlyEqual(x.value, y.value, config.epsilon);
+      return smaller(x.value, y.value);
     },
 
     'string, string': function (x, y) {
@@ -30416,7 +30634,7 @@ function factory (type, config, load, typed) {
       if (!x.equalBase(y)) {
         throw new Error('Cannot compare units with different base');
       }
-      return x.value <= y.value || nearlyEqual(x.value, y.value, config.epsilon);
+      return smallerEq(x.value, y.value);
     },
 
     'string, string': function (x, y) {
@@ -30709,7 +30927,7 @@ function factory (type, config, load, typed) {
       if (!x.equalBase(y)) {
         throw new Error('Cannot compare units with different base');
       }
-      return !nearlyEqual(x.value, y.value, config.epsilon);
+      return unequal(x.value, y.value);
     },
 
     'string, string': function (x, y) {
@@ -33048,7 +33266,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function cos is no angle');
       }
-      return Math.cos(x.value);
+      return cos(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33109,7 +33327,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function cosh is no angle');
       }
-      return _cosh(x.value);
+      return cosh(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33187,7 +33405,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function cot is no angle');
       }
-      return 1 / Math.tan(x.value);
+      return cot(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33255,7 +33473,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function coth is no angle');
       }
-      return _coth(x.value);
+      return coth(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33335,7 +33553,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function csc is no angle');
       }
-      return 1 / Math.sin(x.value);
+      return csc(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33402,7 +33620,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function csch is no angle');
       }
-      return _csch(x.value);
+      return csch(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33516,7 +33734,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function sec is no angle');
       }
-      return 1 / Math.cos(x.value);
+      return sec(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33582,7 +33800,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function sech is no angle');
       }
-      return _sech(x.value);
+      return sech(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33662,7 +33880,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function sin is no angle');
       }
-      return Math.sin(x.value);
+      return sin(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33726,7 +33944,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function sinh is no angle');
       }
-      return _sinh(x.value);
+      return sinh(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33810,7 +34028,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function tan is no angle');
       }
-      return Math.tan(x.value);
+      return tan(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -33880,7 +34098,7 @@ function factory (type, config, load, typed) {
       if (!x.hasBase(type.Unit.BASE_UNITS.ANGLE)) {
         throw new TypeError ('Unit in function tanh is no angle');
       }
-      return _tanh(x.value);
+      return tanh(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -34405,7 +34623,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit': function (x) {
-      return x.value < 0;
+      return isNegative(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -34526,7 +34744,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit': function (x) {
-      return x.value > 0;
+      return isPositive(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -34598,7 +34816,7 @@ function factory (type, config, load, typed) {
     },
 
     'Unit': function (x) {
-      return x.value === 0;
+      return isZero(x.value);
     },
 
     'Array | Matrix': function (x) {
@@ -42077,7 +42295,7 @@ function factory (type, config, load, typed) {
    *
    *    bignumber, boolean, complex, index, matrix, string, unit
    *
-   * @param {string | number | boolean | Array | Matrix | Unit | null} [value]  Value to be converted
+   * @param {string | number | BigNumber | Fraction | boolean | Array | Matrix | Unit | null} [value]  Value to be converted
    * @param {Unit | string} [valuelessUnit] A valueless unit, used to convert a unit to a number
    * @return {number | Array | Matrix} The created number
    */
@@ -42100,6 +42318,10 @@ function factory (type, config, load, typed) {
 
     'BigNumber': function (x) {
       return x.toNumber();
+    },
+
+    'Fraction': function (x) {
+      return x.valueOf();
     },
 
     'Unit': function (x) {
@@ -42275,11 +42497,20 @@ exports.factory = factory;
 },{"../utils/number":492,"./../utils/collection/deepMap":484}],451:[function(require,module,exports){
 'use strict';
 
-var format = require('../../utils/number').format;
 var endsWith = require('../../utils/string').endsWith;
-
+var clone = require('../../utils/object').clone;
 
 function factory (type, config, load, typed) {
+  var add       = load(require('../../function/arithmetic/addScalar'));
+  var subtract  = load(require('../../function/arithmetic/subtract'));
+  var multiply  = load(require('../../function/arithmetic/multiplyScalar'));
+  var divide    = load(require('../../function/arithmetic/divideScalar'));
+  var pow       = load(require('../../function/arithmetic/pow'));
+  var equal     = load(require('../../function/relational/equal'));
+  var isNumeric = load(require('../../function/utils/isNumeric'));
+  var format    = load(require('../../function/utils/format'));
+  var getTypeOf = load(require('../../function/utils/typeof'));
+  var toNumber  = load(require('../../type/number'));
 
   /**
    * @constructor Unit
@@ -42295,7 +42526,7 @@ function factory (type, config, load, typed) {
    *     var c = math.in(a, new Unit(null, 'm');  // 0.05 m
    *     var d = new Unit(9.81, "m/s^2");         // 9.81 m/s^2
    *
-   * @param {number} [value]  A value like 5.2
+   * @param {number | BigNumber | Fraction | boolean} [value]  A value like 5.2
    * @param {string} [name]   A unit name like "cm" or "inch", or a derived unit of the form: "u1[^ex1] [u2[^ex2] ...] [/ u3[^ex3] [u4[^ex4]]]", such as "kg m^2/s^2", where each unit appearing after the forward slash is taken to be in the denominator. "kg m^2 s^-2" is a synonym and is also acceptable. Any of the units can include a prefix.
    */
   function Unit(value, name) {
@@ -42303,8 +42534,8 @@ function factory (type, config, load, typed) {
       throw new Error('Constructor must be called with the new operator');
     }
 
-    if (value != undefined && typeof value !== 'number') {
-      throw new TypeError('First parameter in Unit constructor must be a number');
+    if (value != undefined && !isNumeric(value)) {
+      throw new TypeError('First parameter in Unit constructor must numeric');
     }
     if (name != undefined && (typeof name !== 'string' || name == '')) {
       throw new TypeError('Second parameter in Unit constructor must be a string');
@@ -42483,8 +42714,11 @@ function factory (type, config, load, typed) {
   }
 
   /**
-   * Parse a string into a unit. Throws an exception if the provided string does not
-   * contain a valid unit or cannot be parsed.
+   * Parse a string into a unit. The value of the unit is parsed as number,
+   * BigNumber, or Fraction depending on the math.js config setting `number`.
+   *
+   * Throws an exception if the provided string does not contain a valid unit or
+   * cannot be parsed.
    * @param {string} str        A string like "5.2 inch", "4e2 cm/s^2"
    * @return {Unit} unit
    */
@@ -42519,7 +42753,15 @@ function factory (type, config, load, typed) {
     var valueStr = parseNumber();
     var value = null;
     if(valueStr) {
-      value = parseFloat(valueStr);
+      if (config.number === 'bignumber') {
+        value = new type.BigNumber(valueStr);
+      }
+      else if (config.number === 'fraction') {
+        value = new type.Fraction(valueStr);
+      }
+      else { // number
+        value = parseFloat(valueStr);
+      }
     }
     skipWhitespace();    // Whitespace is not required here
 
@@ -42655,29 +42897,27 @@ function factory (type, config, load, typed) {
 
   /**
    * create a copy of this unit
-   * @return {Unit} clone
+   * @return {Unit} Returns a cloned version of the unit
    */
   Unit.prototype.clone = function () {
-    var clone = new Unit();
+    var unit = new Unit();
 
-    for (var p in this) {
-      if (this.hasOwnProperty(p)) {
-        clone[p] = this[p];
-      }
-    }
+    unit.fixPrefix = this.fixPrefix;
+    unit.isUnitListSimplified = this.isUnitListSimplified;
 
-    clone.dimensions = this.dimensions.slice(0);
-    clone.units = [];
-    for(var i=0; i<this.units.length; i++) {
-      clone.units[i] = { };
+    unit.value = clone(this.value);
+    unit.dimensions = this.dimensions.slice(0);
+    unit.units = [];
+    for(var i = 0; i < this.units.length; i++) {
+      unit.units[i] = { };
       for (var p in this.units[i]) {
         if (this.units[i].hasOwnProperty(p)) {
-          clone.units[i][p] = this.units[i][p];
+          unit.units[i][p] = this.units[i][p];
         }
       }
     }
 
-    return clone;
+    return unit;
   };
 
   /**
@@ -42689,30 +42929,45 @@ function factory (type, config, load, typed) {
       return false;
     }
     return this.units.length > 1 || Math.abs(this.units[0].power - 1.0) > 1e-15;
-  }
+  };
 
   /**
    * Normalize a value, based on its currently set unit(s)
-   * @param {number} value
-   * @return {number} normalized value
+   * @param {number | BigNumber | Fraction | boolean} value
+   * @return {number | BigNumber | Fraction | boolean} normalized value
    * @private
    */
   Unit.prototype._normalize = function (value) {
-    if (this.units.length === 0) {
+    var unitValue, unitOffset, unitPower, unitPrefixValue;
+    var convert;
+
+    if (value == null || this.units.length === 0) {
       return value;
     }
     else if (this._isDerived()) {
       // This is a derived unit, so do not apply offsets.
       // For example, with J kg^-1 degC^-1 you would NOT want to apply the offset.
       var res = value;
+      convert = Unit._getNumberConverter(getTypeOf(value)); // convert to Fraction or BigNumber if needed
+
       for(var i=0; i < this.units.length; i++) {
-        res = res * Math.pow(this.units[i].unit.value * this.units[i].prefix.value, this.units[i].power);
+        unitValue       = convert(this.units[i].unit.value);
+        unitPrefixValue = convert(this.units[i].prefix.value);
+        unitPower       = convert(this.units[i].power);
+        res = multiply(res, pow(multiply(unitValue, unitPrefixValue), unitPower));
       }
+
       return res;
     }
     else {
       // This is a single unit of power 1, like kg or degC
-      return (value + this.units[0].unit.offset) * this.units[0].unit.value * this.units[0].prefix.value;
+      convert = Unit._getNumberConverter(getTypeOf(value)); // convert to Fraction or BigNumber if needed
+
+      unitValue       = convert(this.units[0].unit.value);
+      unitOffset      = convert(this.units[0].unit.offset);
+      unitPrefixValue = convert(this.units[0].prefix.value);
+
+      return multiply(add(value, unitOffset), multiply(unitValue, unitPrefixValue));
     }
   };
 
@@ -42724,26 +42979,41 @@ function factory (type, config, load, typed) {
    * @private
    */
   Unit.prototype._denormalize = function (value, prefixValue) {
-    if (this.units.length === 0) {
+    var unitValue, unitOffset, unitPower, unitPrefixValue;
+    var convert;
+
+    if (value == null || this.units.length === 0) {
       return value;
     }
     else if (this._isDerived()) {
       // This is a derived unit, so do not apply offsets.
       // For example, with J kg^-1 degC^-1 you would NOT want to apply the offset.
-      // Also, prefixValue is ignored--but we will still use the prefix value stored in each unit, since kg is usually preferrable to g unless the user decides otherwise.
+      // Also, prefixValue is ignored--but we will still use the prefix value stored in each unit, since kg is usually preferable to g unless the user decides otherwise.
       var res = value;
-      for(var i=0; i<this.units.length; i++) {
-        res = res / Math.pow(this.units[i].unit.value * this.units[i].prefix.value, this.units[i].power);
+      convert = Unit._getNumberConverter(getTypeOf(value)); // convert to Fraction or BigNumber if needed
+
+      for (var i = 0; i < this.units.length; i++) {
+        unitValue       = convert(this.units[i].unit.value);
+        unitPrefixValue = convert(this.units[i].prefix.value);
+        unitPower       = convert(this.units[i].power);
+        res = divide(res, pow(multiply(unitValue, unitPrefixValue), unitPower));
       }
+
       return res;
     }
     else {
       // This is a single unit of power 1, like kg or degC
+      convert = Unit._getNumberConverter(getTypeOf(value)); // convert to Fraction or BigNumber if needed
+
+      unitValue       = convert(this.units[0].unit.value);
+      unitPrefixValue = convert(this.units[0].prefix.value);
+      unitOffset      = convert(this.units[0].unit.offset);
+
       if (prefixValue == undefined) {
-        return value / this.units[0].unit.value / this.units[0].prefix.value - this.units[0].unit.offset;
+        return subtract(divide(divide(value, unitValue), unitPrefixValue), unitOffset);
       }
       else {
-        return value / this.units[0].unit.value / prefixValue - this.units[0].unit.offset;
+        return subtract(divide(divide(value, unitValue), prefixValue), unitOffset);
       }
     }
   };
@@ -42827,7 +43097,7 @@ function factory (type, config, load, typed) {
    * @return {boolean} true if both units are equal
    */
   Unit.prototype.equals = function (other) {
-    return (this.equalBase(other) && this.value == other.value);
+    return (this.equalBase(other) && equal(this.value, other.value));
   };
 
   /**
@@ -42836,10 +43106,9 @@ function factory (type, config, load, typed) {
    * @return {Unit} product of this unit and the other unit
    */
   Unit.prototype.multiply = function (other) {
-
     var res = this.clone();
     
-    for(var i=0; i<BASE_DIMENSIONS.length; i++) {
+    for(var i = 0; i<BASE_DIMENSIONS.length; i++) {
       res.dimensions[i] = this.dimensions[i] + other.dimensions[i];
     }
 
@@ -42853,7 +43122,7 @@ function factory (type, config, load, typed) {
     if(this.value != null || other.value != null) {
       var valThis = this.value == null ? this._normalize(1) : this.value;
       var valOther = other.value == null ? other._normalize(1) : other.value;
-      res.value = valThis * valOther;
+      res.value = multiply(valThis, valOther);
     }
     else {
       res.value = null;
@@ -42862,7 +43131,7 @@ function factory (type, config, load, typed) {
     // Trigger simplification of the unit list at some future time
     res.isUnitListSimplified = false;
     return res;
-  }
+  };
 
   /**
    * Divide this unit by another one
@@ -42888,7 +43157,7 @@ function factory (type, config, load, typed) {
     if (this.value != null || other.value != null) {
       var valThis = this.value == null ? this._normalize(1) : this.value;
       var valOther = other.value == null ? other._normalize(1) : other.value;
-      res.value = valThis / valOther;
+      res.value = divide(valThis, valOther);
     }
     else {
       res.value = null;
@@ -42901,7 +43170,7 @@ function factory (type, config, load, typed) {
 
   /**
    * Calculate the power of a unit
-   * @param {number} p    Any real number
+   * @param {number | Fraction | BigNumber} p
    * @returns {Unit}      The result: this^p
    */
   Unit.prototype.pow = function (p) {
@@ -42917,7 +43186,12 @@ function factory (type, config, load, typed) {
     }
 
     if(res.value != null) {
-      res.value = Math.pow(res.value, p);
+      res.value = pow(res.value, p);
+
+      // only allow numeric output, we don't want to return a Complex number
+      if (!isNumeric(res.value)) {
+        res.value = NaN;
+      }
     }
     else {
       res.value = null;
@@ -42930,12 +43204,11 @@ function factory (type, config, load, typed) {
 
 
   /**
-   * Create a clone of this unit with a representation
+   * Convert the unit to a specific unit name.
    * @param {string | Unit} valuelessUnit   A unit without value. Can have prefix, like "cm"
-   * @returns {Unit} unit having fixed, specified unit
+   * @returns {Unit} Returns a clone of the unit with a fixed prefix and unit.
    */
   Unit.prototype.to = function (valuelessUnit) {
-    
     var other;
     var value = this.value == null ? this._normalize(1) : this.value;
     if (typeof valuelessUnit === 'string') {
@@ -42948,7 +43221,7 @@ function factory (type, config, load, typed) {
         throw new Error('Cannot convert to a unit with a value');
       }
 
-      other.value = value;
+      other.value = clone(value);
       other.fixPrefix = true;
       other.isUnitListSimplified = true;
       return other;
@@ -42961,7 +43234,7 @@ function factory (type, config, load, typed) {
         throw new Error('Cannot convert to a unit with a value');
       }
       other = valuelessUnit.clone();
-      other.value = value;
+      other.value = clone(value);
       other.fixPrefix = true;
       other.isUnitListSimplified = true;
       return other;
@@ -42974,18 +43247,27 @@ function factory (type, config, load, typed) {
   /**
    * Return the value of the unit when represented with given valueless unit
    * @param {string | Unit} valuelessUnit    For example 'cm' or 'inch'
-   * @return {number} value
+   * @return {number} Returns the unit value as number.
    */
+  // TODO: deprecate Unit.toNumber? It's always better to use toNumeric
   Unit.prototype.toNumber = function (valuelessUnit) {
+    return toNumber(this.toNumeric(valuelessUnit));
+  };
+
+  /**
+   * Return the value of the unit in the original numeric type
+   * @param {string | Unit} valuelessUnit    For example 'cm' or 'inch'
+   * @return {number | BigNumber | Fraction} Returns the unit value
+   */
+  Unit.prototype.toNumeric = function (valuelessUnit) {
     var other = this.to(valuelessUnit);
     if(other._isDerived()) {
-      return other._denormalize(other.value);    
+      return other._denormalize(other.value);
     }
     else {
       return other._denormalize(other.value, other.units[0].prefix.value);
     }
   };
-
 
   /**
    * Get a string representation of the unit.
@@ -43179,14 +43461,13 @@ function factory (type, config, load, typed) {
       // Units must have integer powers, otherwise the prefix will change the
       // outputted value by not-an-integer-power-of-ten
       if (Math.abs(this.units[0].power - Math.round(this.units[0].power)) < 1e-14) {
-        // Apply the prefix
-        var bestPrefix = this._bestPrefix();
-        this.units[0].prefix = bestPrefix;
+        // Apply the best prefix
+        this.units[0].prefix = this._bestPrefix();
       }
     }
 
     var value = this._denormalize(this.value);
-    var str = (this.value !== null) ? (format(value, options)) : '';
+    var str = (this.value !== null) ? format(value, options || {}) : '';
     var unitStr = this.formatUnits();
     if(unitStr.length > 0 && str.length > 0) {
       str += " ";
@@ -43194,39 +43475,6 @@ function factory (type, config, load, typed) {
     str += unitStr;
 
     return str;
-
-/*
-    var value,
-        str;
-    if (this._isDerived()) {
-      value = this._denormalize(this.value);
-      str = (this.value !== null) ? (format(value, options)) : '';
-      var unitStr = this.formatUnits();
-      if(unitStr.length > 0 && str.length > 0) {
-        str += " ";
-      }
-      str += unitStr;
-    }
-    else if (this.units.length === 1) {
-      if (this.value !== null && !this.fixPrefix) {
-        var bestPrefix = this._bestPrefix();
-        value = this._denormalize(this.value, bestPrefix.value);
-        str = format(value, options) + ' ';
-        str += bestPrefix.name + this.units[0].unit.name;
-      }
-      else {
-        value = this._denormalize(this.value);
-        str = (this.value !== null) ? (format(value, options) + ' ') : '';
-        str += this.units[0].prefix.name + this.units[0].unit.name;
-      }
-    }
-    else if (this.units.length === 0) {
-      str = format(this.value, options);
-    }
-
-
-    return str;
-    */
   };
 
   /**
@@ -43247,7 +43495,9 @@ function factory (type, config, load, typed) {
     // though with a little offset of 1.2 for nicer values: you get a
     // sequence 1mm 100mm 500mm 0.6m 1m 10m 100m 500m 0.6km 1km ...
 
-    var absValue = Math.abs(this.value); // / this.units[0].unit.value);
+    // Note: the units value can be any numeric type, but to find the best
+    // prefix it's enough to work with limited precision of a regular number
+    var absValue = Math.abs(toNumber(this.value));
     var bestPrefix = this.units[0].prefix;
     if (absValue === 0) {
       return bestPrefix;
@@ -43532,7 +43782,9 @@ function factory (type, config, load, typed) {
       dimensions: [1, 0, -2, -1, 0, 0, 0, 0, 0]
     },
 
-
+    FREQUENCY: {
+      dimensions: [0, 0, -1, 0, 0, 0, 0, 0, 0]
+    },
     ANGLE: {
       dimensions: [0, 0, 0, 0, 0, 0, 0, 1, 0]
     },
@@ -44144,6 +44396,24 @@ function factory (type, config, load, typed) {
       offset: 0
     },
 
+    // Frequency
+    hertz: {
+      name: 'Hertz',
+      base: BASE_UNITS.FREQUENCY,
+      prefixes: PREFIXES.LONG,
+      value: 1,
+      offset: 0,
+      reciprocal: true
+    },
+    Hz: {
+      name: 'Hz',
+      base: BASE_UNITS.FREQUENCY,
+      prefixes: PREFIXES.SHORT,
+      value: 1,
+      offset: 0,
+      reciprocal: true
+    },
+
     // Angle
     rad: {
       name: 'rad',
@@ -44176,7 +44446,23 @@ function factory (type, config, load, typed) {
       value: 6.2831853071795864769252867665793,
       offset: 0
     },
-
+    // arcsec = rad / (3600 * (360 / 2 * pi)) = rad / 0.0000048481368110953599358991410235795
+    arcsec: {
+      name: 'arcsec',
+      base: BASE_UNITS.ANGLE,
+      prefixes: PREFIXES.NONE,
+      value: 0.0000048481368110953599358991410235795,
+      offset: 0
+    },
+    // arcmin = rad / (60 * (360 / 2 * pi)) = rad / 0.00029088820866572159615394846141477
+    arcmin: {
+      name: 'arcmin',
+      base: BASE_UNITS.ANGLE,
+      prefixes: PREFIXES.NONE,
+      value: 0.00029088820866572159615394846141477,
+      offset: 0
+    },
+    
     // Electric current
     A: {
       name: 'A',
@@ -44585,8 +44871,8 @@ function factory (type, config, load, typed) {
     }
   };
 
-  // plurals
-  var PLURALS = {
+  // aliases (formerly plurals)
+  var ALIASES = {
     meters: 'meter',
     inches: 'inch',
     feet: 'foot',
@@ -44597,7 +44883,10 @@ function factory (type, config, load, typed) {
     chains: 'chain',
     angstroms: 'angstrom',
 
+    lt: 'l',
     litres: 'litre',
+    liter: 'litre',
+    liters: 'litre',
     teaspoons: 'teaspoon',
     tablespoons: 'tablespoon',
     minims: 'minim',
@@ -44622,16 +44911,26 @@ function factory (type, config, load, typed) {
     poundmasses: 'poundmass',
     hundredweights: 'hundredweight',
     sticks: 'stick',
+    lb: 'lbm',
+    lbs: 'lbm',
 
     seconds: 'second',
     minutes: 'minute',
     hours: 'hour',
     days: 'day',
+    
+    hertz: 'hertz',
 
     radians: 'rad',
+    degree: 'deg',
     degrees: 'deg',
-    gradients: 'grad',
+    gradian: 'grad',
+    gradians: 'grad',
     cycles: 'cycle',
+    arcsecond: 'arcsec',
+    arcseconds: 'arcsec',
+    arcminute: 'arcmin',
+    arcminutes: 'arcmin',
 
     BTUs: 'BTU',
     watts: 'watt',
@@ -44647,7 +44946,7 @@ function factory (type, config, load, typed) {
     electronvolts: 'electronvolt',
     moles: 'mole'
 
-  };
+};
 
   /**
    * A unit system is a set of dimensionally independent base units plus a set of derived units, formed by multiplication and division of the base units, that are by convention used with the unit system.
@@ -44680,7 +44979,8 @@ function factory (type, config, load, typed) {
       ELECTRIC_INDUCTANCE:   {unit: UNITS.H,   prefix: PREFIXES.SHORT['']},
       ELECTRIC_CONDUCTANCE:  {unit: UNITS.S,   prefix: PREFIXES.SHORT['']},
       MAGNETIC_FLUX:         {unit: UNITS.Wb,  prefix: PREFIXES.SHORT['']},
-      MAGNETIC_FLUX_DENSITY: {unit: UNITS.T,   prefix: PREFIXES.SHORT['']}
+      MAGNETIC_FLUX_DENSITY: {unit: UNITS.T,   prefix: PREFIXES.SHORT['']},
+      FREQUENCY:             {unit: UNITS.Hz,  prefix: PREFIXES.SHORT['']}
     }
   };
 
@@ -44721,21 +45021,9 @@ function factory (type, config, load, typed) {
       currentUnitSystem = UNIT_SYSTEMS[name];
     }
     else {
-      var mess = "Unit system " + name + " does not exist. Choices are: " + listAvailableUnitSystems();
+      throw new Error('Unit system ' + name + ' does not exist. Choices are: ' + Object.keys(UNIT_SYSTEMS).join(', '));
     }
-  }
- 
-  /**
-   * Return a list of the available unit systems.
-   * @return {string} A space-delimited string of the available unit systems.
-   */
-  Unit.listAvailableUnitSystems = function() {
-    var mess = "";
-    for(var key in UNIT_SYSTEMS) {
-      mess += " " + key;
-    }
-    return mess.substr(1);
-  }
+  };
 
   /**
    * Return the current unit system.
@@ -44747,8 +45035,41 @@ function factory (type, config, load, typed) {
         return key;
       }
     }
-  }
+  };
 
+  /**
+   * Converters to convert from number to an other numeric type like BigNumber
+   * or Fraction
+   */
+  Unit.typeConverters = {
+    BigNumber: function (x) {
+      return new type.BigNumber(x + ''); // stringify to prevent constructor error
+    },
+
+    Fraction: function (x) {
+      return new type.Fraction(x);
+    },
+
+    number: function (x) {
+      return x;
+    }
+  };
+
+  /**
+   * Retrieve the right convertor function corresponding with the type
+   * of provided exampleValue.
+   *
+   * @param {string} type   A string 'number', 'BigNumber', or 'Fraction'
+   *                        In case of an unknown type,
+   * @return {Function}
+   */
+  Unit._getNumberConverter = function (type) {
+    if (!Unit.typeConverters[type]) {
+      throw new TypeError('Unsupported type "' + type + '"');
+    }
+
+    return Unit.typeConverters[type];
+  };
 
   // Add dimensions to each built-in unit
   for (var key in UNITS) {
@@ -44756,22 +45077,16 @@ function factory (type, config, load, typed) {
     unit.dimensions = unit.base.dimensions;
   }    
 
-  for (var name in PLURALS) {
+  // Create aliases
+  for (var name in ALIASES) {
     /* istanbul ignore next (we cannot really test next statement) */
-    if (PLURALS.hasOwnProperty(name)) {
-      var unit = UNITS[PLURALS[name]];
-      var plural = Object.create(unit);
-      plural.name = name;
-      UNITS[name] = plural;
+    if (ALIASES.hasOwnProperty(name)) {
+      var unit = UNITS[ALIASES[name]];
+      var alias = Object.create(unit);
+      alias.name = name;
+      UNITS[name] = alias;
     }
   }
-
-  // aliases
-  UNITS.lt = UNITS.l;
-  UNITS.liter = UNITS.litre;
-  UNITS.liters = UNITS.litres;
-  UNITS.lb = UNITS.lbm;
-  UNITS.lbs = UNITS.lbm;
 
   Unit.PREFIXES = PREFIXES;
   Unit.BASE_UNITS = BASE_UNITS;
@@ -44785,7 +45100,7 @@ exports.name = 'Unit';
 exports.path = 'type';
 exports.factory = factory;
 
-},{"../../utils/number":492,"../../utils/string":494}],452:[function(require,module,exports){
+},{"../../function/arithmetic/addScalar":252,"../../function/arithmetic/divideScalar":257,"../../function/arithmetic/multiplyScalar":272,"../../function/arithmetic/pow":275,"../../function/arithmetic/subtract":280,"../../function/relational/equal":342,"../../function/utils/format":392,"../../function/utils/isNumeric":396,"../../function/utils/typeof":403,"../../type/number":447,"../../utils/object":493,"../../utils/string":494}],452:[function(require,module,exports){
 'use strict';
 
 var deepMap = require('../../../utils/collection/deepMap');
@@ -44828,12 +45143,8 @@ function factory (type, config, load, typed) {
       return type.Unit.parse(x); // a unit with value, like '5cm'
     },
 
-    'number, string': function (value, unit) {
+    'number | BigNumber | Fraction, string': function (value, unit) {
       return new type.Unit(value, unit);
-    },
-
-    'BigNumber, string': function (value, unit) {
-      return new type.Unit(value.toNumber(), unit);
     },
 
     'Array | Matrix': function (x) {
@@ -48047,7 +48358,7 @@ exports.type = function(x) {
 };
 
 },{}],496:[function(require,module,exports){
-module.exports = '2.4.2';
+module.exports = '2.5.0';
 // Note: This file is automatically generated when building math.js.
 // Changes made in this file will be overwritten.
 

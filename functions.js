@@ -5,6 +5,11 @@
         precision: 64
     });
 
+    var clone = function(obj) {
+        return JSON.parse(JSON.stringify(obj));
+    };
+
+
     var scope = {};
     var vars = {};
 
@@ -126,6 +131,39 @@
                 value: concat(arg)
             }
         };
+        functions['derivative'] = function(arg) {
+            var command = arg[0].value;
+            var number = math.bignumber(arg[1].value);
+            var variable_name = arg[2].value;
+            var delta = (arg[3]) ? math.bignumber(arg[3].value) : math.bignumber('1e-16');
+
+            var call_function = function() {
+                return math.bignumber(functions['evaluate']({
+                    type: 'text',
+                    'value': command
+                }).value);
+            };
+            var set_variable = function(value) {
+                functions['var']([{
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: value
+                }]);
+            };
+
+            set_variable(number.toString());
+            var first_value = call_function();
+            set_variable(number.minus(delta).toString());
+            var second_value = call_function();
+
+            return {
+                type: 'text',
+                'value': first_value.minus(second_value).dividedBy(delta).toString()
+            };
+        };
+        functions['d'] = functions['derivative'];
         functions['each'] = function(arg) {
             var result = [];
             for (var i = 0; i < arg[1].length; i++) {
@@ -350,6 +388,80 @@
 
             return objects;
         };
+        functions['solve'] = function(arg) {
+            var command1 = arg[0].value;
+            var command2 = arg[1].value;
+            var variable_name = arg[2].value;
+            var starting_value = (arg[3]) ? math.bignumber(arg[3].value) : math.bignumber(0);
+            var iterations = (arg[4]) ? parseFloat(arg[4].value) : 10;
+            var derivative_delta = (arg[5]) ? math.bignumber(arg[5].value) : math.bignumber('1e-16');
+
+            var set_variable = function(value) {
+                functions['var']([{
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: value
+                }]);
+            };
+            var call_function = function(x) {
+                set_variable(x.toString());
+                var first = math.bignumber(functions['evaluate']({
+                    type: 'text',
+                    value: command1
+                }).value);
+                set_variable(x.toString());
+                var second = math.bignumber(functions['evaluate']({
+                    type: 'text',
+                    value: command2
+                }).value)
+                return first.minus(second);
+            };
+            var getSlope = function(x) {
+                return math.bignumber(functions['derivative']([{
+                    type: 'text',
+                    value: command1
+                }, {
+                    type: 'text',
+                    value: x
+                }, {
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: derivative_delta.toString()
+                }]).value).minus(functions['derivative']([{
+                    type: 'text',
+                    value: command2
+                }, {
+                    type: 'text',
+                    value: x
+                }, {
+                    type: 'text',
+                    value: variable_name
+                }, {
+                    type: 'text',
+                    value: derivative_delta.toString()
+                }]).value);
+            };
+            var nextX = function(x) {
+                var y = call_function(x);
+                var m = getSlope(x);
+
+                // intercept is x - (y / m)
+                return math.bignumber(x).minus(y.dividedBy(m));
+            };
+
+            var current = starting_value;
+            for (var i = 0; i < iterations; i++) {
+                current = nextX(current);
+            }
+            return {
+                type: 'text',
+                value: current.toString()
+            }
+        };
         functions['stringify'] = function(arg) {
             arg.value = JSON.stringify(arg);
             return arg;
@@ -414,6 +526,19 @@
                 value: command
             };
         };
+        functions['pow'] = function(arg) {
+            arg[0].value = math.bignumber(arg[0].value).pow(arg[1].value).toString();
+            return arg[0];
+        };
+        functions['round'] = function(arg) {
+            if (arg[0]) {
+                arg[0].value = math.round(arg[0].value, arg[1].value);
+                return arg[0];
+            } else {
+                arg.value = math.round(arg.value, 0);
+                return arg;
+            }
+        };
         functions['time'] = function(arg) {
             var start = Date.now();
             var result = functions['evaluate'](arg);
@@ -436,7 +561,7 @@
         functions['u'] = functions['unicode'];
         functions['var'] = function(arg) {
             if (arg.type && arg.type === 'text') {
-                return vars[arg.value];
+                return clone(vars[arg.value]);
             }
             vars[arg[0].value] = arg[1];
             return null;
