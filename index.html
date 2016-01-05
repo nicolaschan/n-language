@@ -96,7 +96,7 @@
 					var inputRow = $('<tr></tr>');
 					inputRow.append(createColumn().append(createLabel('in')));
 					inputRow.append(createColumn().append(createLabel('&rsaquo;')));
-					inputRow.append(createColumn().append($('<span></span').addClass('input-text').text(input)));
+					inputRow.append(createColumn().addClass('input-space').append($('<span></span').addClass('input-text').text(input)));
 					var close = createLabel('&times;');
 					close.addClass('close');
 					close.click(function(event) {
@@ -153,6 +153,21 @@
 					}
 				}
 			});
+
+			var getQueryParams = function() {
+				var output = {};
+				var params = window.location.search.substring(1).split('&');
+				for (var i in params) {
+					var pieces = params[i].split('=');
+					output[pieces[0]] = pieces[1];
+				}
+				return output;
+			};
+			var load_import = function() {
+				var import_string = getQueryParams().i;
+				if (import_string) submit('import(' + import_string + ')');
+			};
+			load_import();
 		});
 	</script>
 </head>

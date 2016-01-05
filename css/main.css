@@ -21,7 +21,7 @@ div.output-element {
 table {
 	width: 100%;
 }
-td.output-space {
+td.input-space, td.output-space {
 	max-width: 80vw;
 	width: 100%;
     word-wrap: break-word;

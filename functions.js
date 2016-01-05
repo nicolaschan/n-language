@@ -4,11 +4,13 @@
         number: 'bignumber',
         precision: 64
     });
+    var LZString = require('lz-string');
 
     var clone = function(obj) {
         return JSON.parse(JSON.stringify(obj));
     };
 
+    var user_defined_function_state = {};
 
     var scope = {};
     var vars = {};
@@ -105,6 +107,10 @@
             var evaluator = require('./evaluator');
             return evaluator.evaluateCompiled(compile);
         };
+        functions['compress'] = function(arg) {
+            arg.value = LZString.compressToEncodedURIComponent(arg.value);
+            return arg;
+        };
         functions['concat'] = function(arg) {
             if (arg.type === 'error')
                 return arg;
@@ -131,6 +137,16 @@
                 value: concat(arg)
             }
         };
+        functions['decompress'] = function(arg) {
+            arg.value = LZString.decompressFromEncodedURIComponent(arg.value);
+            return arg;
+        };
+        functions['delete_function'] = function(arg) {
+            delete functions[arg.value];
+            delete user_defined_function_state[arg.value];
+            return null;
+        };
+        functions['del_func'] = functions['delete_function'];
         functions['derivative'] = function(arg) {
             var command = arg[0].value;
             var number = math.bignumber(arg[1].value);
@@ -165,14 +181,22 @@
         };
         functions['d'] = functions['derivative'];
         functions['each'] = function(arg) {
-            var result = [];
-            for (var i = 0; i < arg[1].length; i++) {
-                result.push(functions['call']([arg[0], arg[1][i]]));
+            if (arg[1].type === 'text') {
+                return functions['call']([arg[0], arg[1]]);
+            } else {
+                var result = [];
+                for (var i = 0; i < arg[1].length; i++) {
+                    result.push(functions['call']([arg[0], arg[1][i]]));
+                }
+                return result;
             }
-            return result;
         };
         functions['echo'] = function(arg) {
             return arg;
+        };
+        functions['ensure_array'] = function(arg) {
+            if (arg.constructor === Array) return arg;
+            else return [arg];
         };
         functions['evaluate'] = function(arg) {
             if (arg.type === 'error')
@@ -190,6 +214,30 @@
             return arg;
         };
         functions['eval'] = functions['evaluate'];
+        functions['export'] = function(arg) {
+            var functions_to_export = {};
+            if (arg.type === 'text') {
+                functions_to_export[arg.value] = user_defined_function_state[arg.value];
+            } else {
+                for (var i in arg) {
+                    functions_to_export[arg[i].value] = user_defined_function_state[arg[i].value];
+                }
+            }
+            return functions['compress']({
+                type: 'text',
+                value: JSON.stringify(functions_to_export)
+            });
+        };
+        functions['export_all'] = function(arg) {
+            var user_defined_functions = [];
+            for (var key in user_defined_function_state) {
+                user_defined_functions.push({
+                    type: 'text',
+                    value: key
+                });
+            }
+            return functions['export'](user_defined_functions);
+        };
         functions['$'] = functions['evaluate'];
         functions['factorial'] = function(arg) {
             if (arg.type === 'error')
@@ -214,6 +262,7 @@
             return arg;
         };
         functions['function'] = function(arg) {
+            user_defined_function_state[arg[0].value] = arg[1].value;
             functions[arg[0].value] = function(arg2) {
                 var args = [];
                 args.push(arg[1]);
@@ -247,6 +296,19 @@
                 type: 'image',
                 url: arg.value
             }
+        };
+        functions['import'] = function(arg) {
+            var import_data = JSON.parse(functions['decompress'](arg).value);
+            for (var key in import_data) {
+                functions['function']([{
+                    type: 'text',
+                    value: key
+                }, {
+                    type: 'text',
+                    value: import_data[key]
+                }]);
+            }
+            return null;
         };
         functions['last'] = function(arg) {
             return arg[arg.length - 1];
@@ -329,6 +391,12 @@
         functions['pre'] = function(arg) {
             return previous_result;
         };
+        functions['random'] = function(arg) {
+            return {
+                type: 'text',
+                value: math.bignumber(Math.random()).toString()
+            };
+        };
         functions['recursion'] = function(arg) {
             var count = 0;
 
@@ -356,6 +424,16 @@
                 result.push(JSON.parse(JSON.stringify(arg[0])));
             }
             return result;
+        };
+        functions['require'] = function(arg) {
+            var libs = {
+                math: 'N4IgTgpgxglgDmA9lAhgGxALhAWxQFwAsAKKRAO1X2IEYB6AGmBoF8BKNkBkAExgDcYPCFlwBXNPnhoAnsWYsGEFFBKRYCZOgA62+a11sGAZwhpo1YACpFNALQdO3chADmBEdmWriOCVLhZXWI7Gl0mA20ja3YuEGMxACN8MBV8URQeHn1FF3d8CGJTcyhLGwZ7RxAWIA',
+                colors: 'N4IgRgNgrgpiBcIDOAXAnhGAKYAqAvgDQDGA9hKQE6GSwCUIhIlMAJgsupjgSeVYRasGTAOYsYAOw6oM2PETIVq4mFJEg0MCBQDuMrvN5KBWnaV0aqAQ0mi4iWdwV9lhG3ZgbiaWwbk8ivzUPrYaAA4AlpIA1v7OxsGEUbERUJThmPFGQW7h6ZlejOAQ1sRxjoaBrgKQZTEaugAWkSgOnAEuJtTNrUX4QA'
+            };
+            return functions['import']({
+                type: 'text',
+                value: libs[arg.value]
+            });
         };
         functions['select'] = function(arg) {
             var objects = [];
