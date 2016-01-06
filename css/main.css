@@ -18,6 +18,17 @@ div.output-element {
 	display: inline-block;
 }
 
+span.output-span a:link, 
+span.output-span a:visited {
+	color: blue;
+	text-decoration: none;
+	transition: color 0.1s ease;
+}
+span.output-span a:hover {
+	color: #3399ff;
+	text-decoration: underline;
+}
+
 table {
 	width: 100%;
 }

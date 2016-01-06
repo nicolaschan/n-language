@@ -11,15 +11,19 @@
 			worker.onmessage = function(e) {
 				var id = e.data.id;
 				$('#' + id + 'temp').remove();
-				$('#' + id).append(display(e.data.result));
+				$('#' + id).append(display(e.data.result, id).attr('id', id + 'output'));
 			};
 
 			var history = [];
 			var current_index = -1;
 			var saved_value;
 
-			var display = function(result) {
-				var outputElement = $('<span></span>');
+			var getLoadingElement = function(id) {
+				return $('<span></span').addClass('loading').attr('id', id + 'temp').text('Calculating...');
+			};
+
+			var display = function(result, id) {
+				var outputElement = $('<span></span>').addClass('output-span');
 
 				if (!result) {
 					var text = $('<span></span>').addClass('output-null');
@@ -33,6 +37,27 @@
 							if (result.style)
 								text.css(result.style);
 							outputElement.append(text);
+						} else if (result.type === 'button') {
+							var button = $('<a></a>');
+							button.text(result.value);
+							button.attr('href','javascript:void(0)');
+							if (result.style)
+								button.css(result.style);
+							button.click(function() {
+								$('#' + id + 'output').remove();
+								$('#' + id).append(getLoadingElement(id));
+								worker.postMessage({id: id, input: result.run});
+							});
+							outputElement.append(button);
+						} else if (result.type === 'invisible array') {
+							var element = $('<span></span>');
+
+							for (var i in result.objects) {
+								var object = display(result.objects[i], id);
+								element.append(object);
+							}
+
+							outputElement.append(element);
 						} else if (result.type === 'image') {
 							var image = $('<img></img>');
 							image.attr('src', result.url);
@@ -55,7 +80,7 @@
 						var beginArray = $('<span></span>').addClass('array-indicator').text('[');
 						outputElement.append(beginArray);
 						for (var i in result) {
-							outputElement.append(display(result[i]));
+							outputElement.append(display(result[i], id));
 							if (parseInt(i) !== (result.length - 1)) {
 								var comma = $('<span></span>').addClass('array-indicator').text(',');
 								outputElement.append(comma);
@@ -109,7 +134,7 @@
 					var outputRow = $('<tr></tr>');
 					outputRow.append(createColumn().append(createLabel('out')));
 					outputRow.append(createColumn().append(createLabel('&rsaquo;')));
-					outputRow.append(createColumn().attr('id', id).addClass('output-space').append($('<span></span').addClass('loading').attr('id', id + 'temp').text('Calculating...')));
+					outputRow.append(createColumn().attr('id', id).addClass('output-space').append(getLoadingElement(id)));
 
 					table.append(outputRow);
 

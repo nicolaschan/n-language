@@ -49,6 +49,26 @@
                 value: sum(arg).toString()
             };
         };
+        functions['boolean'] = function(arg) {
+            if ((arg.value === 'true') || (arg.value === 'yes')) {
+                return {
+                    type: 'boolean',
+                    value: true
+                }
+            } else {
+                return {
+                    type: 'boolean',
+                    value: false
+                }
+            }
+        };
+        functions['button'] = function(arg) {
+            return {
+                type: 'button',
+                value: arg[0].value,
+                run: arg[1].value
+            }
+        };
         functions['call'] = function(arg) {
             const syntax = {
                 begin: '{',
@@ -181,7 +201,7 @@
         };
         functions['d'] = functions['derivative'];
         functions['each'] = function(arg) {
-            if (arg[1].type === 'text') {
+            if (arg[1].type) {
                 return functions['call']([arg[0], arg[1]]);
             } else {
                 var result = [];
@@ -197,6 +217,21 @@
         functions['ensure_array'] = function(arg) {
             if (arg.constructor === Array) return arg;
             else return [arg];
+        };
+        functions['equals'] = function(arg) {
+            var first = JSON.stringify(arg[0]);
+            for (var i = 1; i < arg.length; i++) {
+                if (JSON.stringify(arg[i]) !== first) {
+                    return {
+                        type: 'boolean',
+                        value: false
+                    }
+                }
+            }
+            return {
+                type: 'boolean',
+                value: true
+            }
         };
         functions['evaluate'] = function(arg) {
             if (arg.type === 'error')
@@ -291,6 +326,16 @@
             }
             return keys;
         };
+        functions['if'] = function(arg) {
+            if (arg[0].type !== 'boolean') {
+                arg[0] = functions['boolean'](arg[0]);
+            }
+            if (arg[0].value) {
+                return functions['evaluate'](arg[1]);
+            } else {
+                return functions['evaluate'](arg[2]);
+            }
+        };
         functions['image'] = function(arg) {
             return {
                 type: 'image',
@@ -299,6 +344,7 @@
         };
         functions['import'] = function(arg) {
             var import_data = JSON.parse(functions['decompress'](arg).value);
+            var imported = [];
             for (var key in import_data) {
                 functions['function']([{
                     type: 'text',
@@ -307,8 +353,22 @@
                     type: 'text',
                     value: import_data[key]
                 }]);
+                imported.push({
+                    type: 'text',
+                    value: key
+                });
             }
-            return null;
+            return imported;
+        };
+        functions['inherit_style'] = function(arg) {
+            arg[1].style = arg[0].style;
+            return arg[1];
+        };
+        functions['invisible_array'] = function(arg) {
+            return {
+                type: 'invisible array',
+                objects: arg
+            };
         };
         functions['last'] = function(arg) {
             return arg[arg.length - 1];
@@ -427,17 +487,40 @@
         };
         functions['require'] = function(arg) {
             var libs = {
-                math: 'N4IgTgpgxglgDmA9lAhgGxALhAWxQFwAsAKKRAO1X2IEYB6AGmBoF8BKNkBkAExgDcYPCFlwBXNPnhoAnsWYsGEFFBKRYCZOgA62+a11sGAZwhpo1YACpFNALQdO3chADmBEdmWriOCVLhZXWI7Gl0mA20ja3YuEGMxACN8MBV8URQeHn1FF3d8CGJTcyhLGwZ7RxAWIA',
-                colors: 'N4IgRgNgrgpiBcIDOAXAnhGAKYAqAvgDQDGA9hKQE6GSwCUIhIlMAJgsupjgSeVYRasGTAOYsYAOw6oM2PETIVq4mFJEg0MCBQDuMrvN5KBWnaV0aqAQ0mi4iWdwV9lhG3ZgbiaWwbk8ivzUPrYaAA4AlpIA1v7OxsGEUbERUJThmPFGQW7h6ZlejOAQ1sRxjoaBrgKQZTEaugAWkSgOnAEuJtTNrUX4QA'
+                math: {
+                    code: 'N4IgzgjgTgLiBcICmBDAxgCwBQFsUwwB1Cs0B7AOzX2K0lmMZOIBpgBGAX1aeIEp+-NgCpOfECxBQkaAJYAHKGWoAbBCDwFSlajCzsA9Gy59xkgCayAbrPNJ1OAK4qYClQE8sHTi1SYs0nKKyigqtN5CYEgqMnrAoizsALSmZiAUSADm+PaIfthOLm7utEnsrBGEfCJiEuCOAEYwUOhwiCjm5l5cLBnZMEh00bFeCcmpIJxAA',
+                    dependencies: []
+                },
+                colors: {
+                    code: 'N4IgRgNgrgpiBcIDOAXAnhGAKYAqAvgDQDGA9hKQE6GSwCUIhIlMAJgsupjgSeVYRasGTAOYsYAOw6oM2PETIVq4mFJEg0MCBQDuMrvN5KBWnaV0aqAQ0mi4iWdwV9lhG3ZgbiaWwbk8ivzUPrYaAA4AlpIA1v7OxsGEUbERUJThmPFGQW7h6ZlejOAQ1sRxjoaBrgKQZTEaugAWkSgOnAEuJtTNrUX4QA',
+                    dependencies: []
+                },
+                interaction: {
+                    code: 'N4IgtgrgNgLglgBygUwPoGMAWB7O7kgBcIcAdgG5wDOcARiqgIYBOzjAngBTACMAvgBpkjLJzKZkzODFRUY7FAB1FnKshToYyzsuW9divsoEAGZQEpjtCDBjZS2tRq0qD+3UcWmLxp8k3abjwGngLBipYRFgJ+mkxQAO4cVEysHNwAVII8ALTm+SACIOj2AGZwzGBE4NDwSGhYuPjc-AKq8iicAMJlFWACJVDYzAIA5szIyKTmAsAATHwz7QrI3Yyk+FAD2EMjEwAmM8AAzIvmhSBy2AhJMFiyMIwwBMRQjHKc5CycD9e392RpHBGFt5osBHBSpxkABHCAgqgtQRXBAIZCHASQWCIBiNPDIbRfZjaX43J4A0hAkE+LyODoElQAZUezBc212xnGkwcUS8KP+mAeTwZBnaLBcBgERIMJP55MFgPg1JlkQMkUiAm0ACVkGo2XK7oK5MKZSoUWj9qbvCqaTM3nJCSxZXYyYahazjKRsAlAryNVi6ricPjtRBSJTSKNjHSVtpmddjINhsYDjSYi6BULnqb2tcLVbGPtLTLPk6S6TM4rgVBTardAIvT6S7WrQGcewc9Lywb7saPTaZQIcuE1S2B+qLAUij3MNUZ1nVub0aZznwgA',
+                    dependencies: []
+                }
             };
-            return functions['import']({
-                type: 'text',
-                value: libs[arg.value]
-            });
+            if (libs[arg.value].dependencies.length === 0) {
+                return functions['import']({
+                    type: 'text',
+                    value: libs[arg.value].code
+                });
+            } else {
+                var output = [functions['import']({
+                    type: 'text',
+                    value: libs[arg.value].code
+                })];
+                for (var i in libs[arg.value].dependencies) {
+                    output.push(functions['require']({
+                        type: 'text',
+                        value: libs[arg.value].dependencies[i]
+                    }));
+                }
+                return output;
+            }
         };
-        functions['select'] = function(arg) {
+        functions['select_always_array'] = function(arg) {
             var objects = [];
-
             for (var i = 1; i < arg.length; i++) {
                 var object = [];
                 var parts = arg[i].value.split(',');
@@ -455,12 +538,20 @@
                         object.push(arg[0][parts[j]]);
                     }
                 }
+
                 objects.push(object);
             }
 
             if (objects.length === 1) {
-                if (objects[0].length === 1)
-                    return objects[0][0];
+                return objects[0];
+            }
+
+            return objects;
+        };
+        functions['select'] = function(arg) {
+            var objects = functions['select_always_array'](arg);
+
+            if (objects.length === 1) {
                 return objects[0];
             }
 
