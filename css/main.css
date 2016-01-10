@@ -47,6 +47,10 @@ td.input-space, td.output-space {
 .output-error {
 	color: red;
 }
+.output-json {
+	color: purple;
+}
+
 .error-indicator {
 	color: red;
 	font-weight: 600;

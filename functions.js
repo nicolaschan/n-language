@@ -128,8 +128,10 @@
             return evaluator.evaluateCompiled(compile);
         };
         functions['compress'] = function(arg) {
-            arg.value = LZString.compressToEncodedURIComponent(arg.value);
-            return arg;
+            return {
+                type: 'text',
+                value: LZString.compressToEncodedURIComponent(JSON.stringify(arg))
+            };
         };
         functions['concat'] = function(arg) {
             if (arg.type === 'error')
@@ -158,8 +160,7 @@
             }
         };
         functions['decompress'] = function(arg) {
-            arg.value = LZString.decompressFromEncodedURIComponent(arg.value);
-            return arg;
+            return JSON.parse(LZString.decompressFromEncodedURIComponent(arg.value));
         };
         functions['delete_function'] = function(arg) {
             delete functions[arg.value];
@@ -258,10 +259,7 @@
                     functions_to_export[arg[i].value] = user_defined_function_state[arg[i].value];
                 }
             }
-            return functions['compress']({
-                type: 'text',
-                value: JSON.stringify(functions_to_export)
-            });
+            return functions['compress'](functions_to_export);
         };
         functions['export_all'] = function(arg) {
             var user_defined_functions = [];
@@ -326,14 +324,14 @@
             }
             return keys;
         };
-        functions['if'] = function(arg) {
+        functions['if_no_evaluate'] = function(arg) {
             if (arg[0].type !== 'boolean') {
                 arg[0] = functions['boolean'](arg[0]);
             }
             if (arg[0].value) {
-                return functions['evaluate'](arg[1]);
+                return arg[1];
             } else {
-                return functions['evaluate'](arg[2]);
+                return arg[2];
             }
         };
         functions['image'] = function(arg) {
@@ -343,7 +341,7 @@
             }
         };
         functions['import'] = function(arg) {
-            var import_data = JSON.parse(functions['decompress'](arg).value);
+            var import_data = functions['decompress'](arg);
             var imported = [];
             for (var key in import_data) {
                 functions['function']([{
@@ -385,6 +383,70 @@
                 value: arg.length.toString()
             };
         };
+        functions['less_than'] = function(arg) {
+            var first = math.bignumber(arg[0].value);
+            for (var i = 1; i < arg.length; i++) {
+                if (first.gte(math.bignumber(arg[i].value))) {
+                    return {
+                        type: 'boolean',
+                        value: false
+                    }
+                }
+            }
+            return {
+                type: 'boolean',
+                value: true
+            }
+        };
+        functions['lt'] = functions['less_than'];
+        functions['less_than_equal'] = function(arg) {
+            var first = math.bignumber(arg[0].value);
+            for (var i = 1; i < arg.length; i++) {
+                if (first.gt(math.bignumber(arg[i].value))) {
+                    return {
+                        type: 'boolean',
+                        value: false
+                    }
+                }
+            }
+            return {
+                type: 'boolean',
+                value: true
+            }
+        };
+        functions['lte'] = functions['less_than_equal'];
+        functions['greater_than'] = function(arg) {
+            var first = math.bignumber(arg[0].value);
+            for (var i = 1; i < arg.length; i++) {
+                if (first.lte(math.bignumber(arg[i].value))) {
+                    return {
+                        type: 'boolean',
+                        value: false
+                    }
+                }
+            }
+            return {
+                type: 'boolean',
+                value: true
+            }
+        };
+        functions['gt'] = functions['greater_than'];
+        functions['greater_than_equal'] = function(arg) {
+            var first = math.bignumber(arg[0].value);
+            for (var i = 1; i < arg.length; i++) {
+                if (first.lt(math.bignumber(arg[i].value))) {
+                    return {
+                        type: 'boolean',
+                        value: false
+                    }
+                }
+            }
+            return {
+                type: 'boolean',
+                value: true
+            }
+        };
+        functions['gte'] = functions['greater_than_equal'];
         functions['math'] = function(arg) {
             if (arg.type === 'error')
                 return arg;
@@ -497,6 +559,10 @@
                 },
                 interaction: {
                     code: 'N4IgtgrgNgLglgBygUwPoGMAWB7O7kgBcIcAdgG5wDOcARiqgIYBOzjAngBTACMAvgBpkjLJzKZkzODFRUY7FAB1FnKshToYyzsuW9divsoEAGZQEpjtCDBjZS2tRq0qD+3UcWmLxp8k3abjwGngLBipYRFgJ+mkxQAO4cVEysHNwAVII8ALTm+SACIOj2AGZwzGBE4NDwSGhYuPjc-AKq8iicAMJlFWACJVDYzAIA5szIyKTmAsAATHwz7QrI3Yyk+FAD2EMjEwAmM8AAzIvmhSBy2AhJMFiyMIwwBMRQjHKc5CycD9e392RpHBGFt5osBHBSpxkABHCAgqgtQRXBAIZCHASQWCIBiNPDIbRfZjaX43J4A0hAkE+LyODoElQAZUezBc212xnGkwcUS8KP+mAeTwZBnaLBcBgERIMJP55MFgPg1JlkQMkUiAm0ACVkGo2XK7oK5MKZSoUWj9qbvCqaTM3nJCSxZXYyYahazjKRsAlAryNVi6ricPjtRBSJTSKNjHSVtpmddjINhsYDjSYi6BULnqb2tcLVbGPtLTLPk6S6TM4rgVBTardAIvT6S7WrQGcewc9Lywb7saPTaZQIcuE1S2B+qLAUij3MNUZ1nVub0aZznwgA',
+                    dependencies: ['logic']
+                },
+                logic: {
+                    code: 'N4IglgZiBcIKYDcCGAbArkgLnAFJA+gHYD2+iqG2OwAVAL4CUDIANCJgE5pwzwCOGFAGccABhajmbCKiE9YcAbLEsAjFJBJCAE14okQzDmQcc+Ldpa1GLSDjko4AYyMmzFhhM+LBQgDp+xkgcAe46AQwRLDLCcKERTKwgJJi8cEhOABZ4EKHAqnQB0bJxAWU4ZWWRfiyc3JXxDdWe1sx0QA',
                     dependencies: []
                 }
             };
@@ -633,6 +699,7 @@
         };
         functions['stringify'] = function(arg) {
             arg.value = JSON.stringify(arg);
+            arg.type = 'text';
             return arg;
         };
         functions['style'] = function(arg) {

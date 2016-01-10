@@ -77,17 +77,23 @@
 							outputElement.append(json);
 						}
 					} else {
-						var beginArray = $('<span></span>').addClass('array-indicator').text('[');
-						outputElement.append(beginArray);
-						for (var i in result) {
-							outputElement.append(display(result[i], id));
-							if (parseInt(i) !== (result.length - 1)) {
-								var comma = $('<span></span>').addClass('array-indicator').text(',');
-								outputElement.append(comma);
+						if (result.constructor === Array) {
+							var beginArray = $('<span></span>').addClass('array-indicator').text('[');
+							outputElement.append(beginArray);
+							for (var i in result) {
+								outputElement.append(display(result[i], id));
+								if (parseInt(i) !== (result.length - 1)) {
+									var comma = $('<span></span>').addClass('array-indicator').text(',');
+									outputElement.append(comma);
+								}
 							}
+							var endArray = $('<span></span>').addClass('array-indicator').text(']');
+							outputElement.append(endArray);
+						} else {
+							var json = $('<span></span>').addClass('output-json');
+							json.text(JSON.stringify(result));
+							outputElement.append(json); 
 						}
-						var endArray = $('<span></span>').addClass('array-indicator').text(']');
-						outputElement.append(endArray);
 					}
 				}
 				return outputElement;
